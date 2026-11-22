@@ -47,11 +47,20 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: GlyphCut-Windows-x64.zip
+          path: release-package
+          skip-decompress: true
       - name: 发布 Windows 更新包
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          files=(release-package/*)
+          test "${#files[@]}" -eq 1
+          test -f "${files[0]}"
+          mv -- "${files[0]}" GlyphCut-Windows-x64.zip
           version=$(node -p "require('./desktop/package.json').version")
+          zip_version=$(unzip -p GlyphCut-Windows-x64.zip GlyphCut-Windows-x64/resources/app/package.json |
+            node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).version")
+          test "$version" = "$zip_version"
           git log -1 --format=%b "$GITHUB_SHA" > release-notes.md
           gh release create "v$version" GlyphCut-Windows-x64.zip --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "GlyphCut v$version" --notes-file release-notes.md --latest
