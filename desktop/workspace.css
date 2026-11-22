@@ -92,6 +92,13 @@
   border-bottom: 1px solid #e4e9f0;
 }
 .desktop-card-visual .desktop-art { width: 100%; height: 96px; stroke: none; }
+.desktop-font-sample text {
+  fill: currentColor;
+  opacity: .45;
+  font-family: var(--mono);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
 .desktop-art .template-line { stroke: #5e7088; stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 .desktop-art .template-disabled { fill: #c9d1df; }
 .desktop-card-caption { display: grid; gap: 3px; width: 100%; padding: 13px 14px; }

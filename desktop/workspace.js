@@ -81,11 +81,39 @@
   }
 
   function fontArt(font) {
+    const sample = font.sample.trim();
+    if (!sample) return icon("i-glyph");
     const spec = font.template.spec;
-    const ch = [...alphabet].find(character => font.glyphs[character]?.length);
-    if (!ch) return icon("i-glyph");
     const svg = art(spec);
-    addPath(svg, glyphPath(studio.geometry(spec), font.glyphs[ch]), "", "currentColor");
+    svg.classList.add("desktop-font-sample");
+    const geometry = studio.geometry(spec);
+    const advance = spec.width + 2 * font.spacing;
+    let offset = 0;
+    let count = 0;
+    for (const character of sample) {
+      if (count === 7) break;
+      if (character === " ") {
+        offset += advance / 2;
+        continue;
+      }
+      const ids = font.glyphs[character];
+      if (ids?.length) {
+        const glyph = document.createElementNS(svgNS, "g");
+        glyph.setAttribute("transform", `translate(${offset + font.spacing} 0)`);
+        addPath(glyph, glyphPath(geometry, ids), "", "currentColor");
+        svg.append(glyph);
+      } else {
+        const placeholder = document.createElementNS(svgNS, "text");
+        placeholder.setAttribute("x", String(offset + advance / 2));
+        placeholder.setAttribute("y", String(spec.height / 2));
+        placeholder.setAttribute("font-size", String(Math.min(spec.height * 0.65, advance)));
+        placeholder.textContent = character;
+        svg.append(placeholder);
+      }
+      offset += advance;
+      count++;
+    }
+    svg.setAttribute("viewBox", `0 0 ${offset} ${spec.height}`);
     return svg;
   }
 
@@ -171,7 +199,7 @@
         const linked = templates.get(font.template.id);
         cards.append(projectCard(font, "font", {
           status: stale ? "模板有更新" : linked?.name ?? `${font.template.name}（内嵌模板）`,
-          image: stale ? icon("i-exclude") : fontArt(font),
+          image: fontArt(font),
           open: () => stale ? resolve(font) : openFont(font),
           className: stale ? "pending" : ""
         }));
