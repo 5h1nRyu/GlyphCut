@@ -1,6 +1,7 @@
 """Package the static GlyphCut app with the pinned Windows x64 Electron runtime."""
 
 from hashlib import sha256
+from json import dumps
 from pathlib import Path
 from shutil import copy2, copyfileobj, make_archive
 from sys import argv
@@ -34,13 +35,17 @@ def package(runtime: Path, staging: Path) -> Path:
 
     app = target / "resources" / "app"
     (app / "dist").mkdir(parents=True)
-    for filename in ("main.cjs", "preload.cjs", "projects.cjs", "workspace.html", "package.json"):
+    for filename in ("main.cjs", "preload.cjs", "projects.cjs", "updates.cjs", "portable-update.ps1",
+                     "workspace.html", "package.json"):
         copy2(DESKTOP / filename, app / filename)
     for filename in ("workspace.js", "workspace.css"):
         copy2(DESKTOP / filename, app / "dist" / filename)
     for filename in ("index.html", "style.css", "geometry.js", "truetype.js", "studio.js"):
         copy2(ROOT / "docs" / filename, app / "dist" / filename)
     copy2(DESKTOP / "使用说明.txt", target / "使用说明.txt")
+    manifest = target / "portable-files.json"
+    files = sorted([item.name for item in target.iterdir()] + [manifest.name])
+    manifest.write_text(dumps(files) + "\n", encoding="utf-8")
     return Path(make_archive(str(ROOT / PACKAGE), "zip", staging, PACKAGE))
 
 

@@ -134,6 +134,8 @@ function createProjects(root) {
       if (input.id) await requireRecord("templates", input.id);
       return write("templates", templateData(input, input.id ?? randomUUID()));
     }),
+    deleteTemplate: id => queue(() => rm(path("templates", id), { force: true })),
+    deleteFont: id => queue(() => rm(path("fonts", id), { force: true })),
     createFont: templateId => queue(async () => {
       const template = await requireRecord("templates", templateId);
       const font = fontData(template, {
@@ -145,9 +147,10 @@ function createProjects(root) {
     saveFont: (id, changes, simplified) => queue(async () => {
       const font = await requireRecord("fonts", id);
       const current = await read("templates", font.template.id);
-      if (!templateMatches(font.template, current)) throw new Error("关联模板已更改，请先处理模板变更。");
-      if (simplified) return fork(font, { ...simplified, name: `${current.name}（简化）` }, changes);
-      return { font: await write("fonts", fontData(current, changes, id)) };
+      if (current && !templateMatches(font.template, current)) throw new Error("关联模板已更改，请先处理模板变更。");
+      const template = current ?? font.template;
+      if (simplified) return fork(font, { ...simplified, name: `${template.name}（简化）` }, changes);
+      return { font: await write("fonts", fontData(template, changes, id)) };
     }),
     adaptFont: (id, previewTemplate, glyphs) => queue(async () => {
       const font = await requireRecord("fonts", id);

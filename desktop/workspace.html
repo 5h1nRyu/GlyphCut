@@ -1,6 +1,10 @@
+<svg class="icons" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="desktop-trash-icon" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"/></symbol>
+</svg>
 <header class="desktop-titlebar">
   <div class="desktop-brand"><span class="mark" aria-hidden="true"><b></b><b></b><b></b><b></b></span>字形切片</div>
-  <div class="desktop-window-controls" aria-label="窗口控制">
+  <div class="desktop-window-controls">
+    <button id="desktop-update" class="desktop-update-button" type="button" hidden>检查更新</button>
     <button id="desktop-minimize" type="button" aria-label="最小化" title="最小化"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5h10"/></svg></button>
     <button id="desktop-maximize" type="button" aria-label="最大化" title="最大化"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="desktop-maximize-icon" d="M3.5 3.5h9v9h-9z"/></svg></button>
     <button id="desktop-close" type="button" aria-label="关闭" title="关闭"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
@@ -45,3 +49,13 @@
     </section>
   </div>
 </main>
+<dialog id="desktop-update-dialog" class="desktop-update-dialog" aria-labelledby="desktop-update-title">
+  <form method="dialog">
+    <header><h2 id="desktop-update-title">程序更新</h2><button type="submit" class="button" aria-label="关闭更新窗口">关闭</button></header>
+  </form>
+  <p id="desktop-update-version"></p>
+  <p id="desktop-update-message" role="status"></p>
+  <progress id="desktop-update-progress" max="100" aria-label="更新下载进度" hidden></progress>
+  <pre id="desktop-update-notes" hidden></pre>
+  <button id="desktop-update-action" type="button" class="button accent" hidden></button>
+</dialog>

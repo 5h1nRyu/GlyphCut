@@ -11,14 +11,19 @@ permissions:
 
 jobs:
   package:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: 验证更新与项目删除
+        run: node --test desktop/tests/desktop.test.cjs
+      - name: 验证 Windows 更新与回退
+        shell: powershell
+        run: ./desktop/tests/portable-update.test.ps1
       - name: 生成程序包
-        run: python3 desktop/package-windows.py
+        run: python desktop/package-windows.py
       - name: 上传程序包
         uses: actions/upload-artifact@v7
         with:

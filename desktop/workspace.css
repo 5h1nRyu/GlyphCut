@@ -176,3 +176,41 @@
   .desktop-editor-bar .button { min-width: 0; padding-inline: 7px; font-size: .79rem; }
   .desktop-save-status { font-size: .7rem; }
 }
+
+.desktop-card-slot { position: relative; display: grid; min-width: 0; }
+.desktop-card-slot .desktop-card-caption { padding-right: 46px; }
+.desktop-delete {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #59667a;
+  background: transparent;
+}
+.desktop-delete:hover, .desktop-delete:focus-visible { color: #a02536; background: #fbe3e6; }
+.desktop-window-controls .desktop-update-button { width: auto; padding-inline: 12px; font-size: .8rem; }
+.desktop-window-controls .desktop-update-button.available { color: var(--accent); }
+.desktop-update-dialog { width: min(470px, 90vw); padding: 20px; border: 1px solid #cfd8e5; border-radius: 10px; color: #161f2c; }
+.desktop-update-dialog::backdrop { background: #141b2766; }
+.desktop-update-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.desktop-update-dialog header h2 { font-size: 1.15rem; }
+.desktop-update-dialog p, .desktop-update-dialog progress { margin-block: 10px; }
+.desktop-update-dialog progress { width: 100%; accent-color: #52800b; }
+.desktop-update-dialog pre {
+  margin-block: 12px;
+  max-height: 28vh;
+  overflow: auto;
+  padding: 10px;
+  background: #f3f5f8;
+  border-radius: 6px;
+  font: inherit;
+  font-size: .85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

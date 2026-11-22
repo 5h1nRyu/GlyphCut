@@ -39,7 +39,7 @@
   const dirty = () => editing() && (!editingRecord || !same(editorState(), savedEditorState));
   const pendingTemplate = font => {
     const current = templates.get(font.template.id);
-    return !current || !sameShape(font.template, current);
+    return Boolean(current && !sameShape(font.template, current));
   };
 
   function element(tag, className, text) {
@@ -111,6 +111,29 @@
     return button;
   }
 
+  function projectCard(record, kind, options) {
+    const { status, image, open, className } = options;
+    const wrapper = element("div", "desktop-card-slot");
+    const remove = element("button", "desktop-delete");
+    remove.type = "button";
+    const label = `删除${kind === "template" ? "模板" : "字体"}「${record.name}」`;
+    remove.title = label;
+    remove.setAttribute("aria-label", label);
+    remove.append(icon("desktop-trash-icon"));
+    remove.addEventListener("click", () => run(async () => {
+      if (!await desktop.deleteProject(kind, record.id)) return;
+      const records = kind === "template" ? templates : fonts;
+      records.delete(record.id);
+      showMenu(page);
+      studio.notify(`已${label}。`);
+      requestAnimationFrame(() => {
+        ($("desktop-cards").querySelector(".desktop-card") ?? $("desktop-menu-title")).focus({ preventScroll: true });
+      });
+    }));
+    wrapper.append(card(record.name, status, image, open, className), remove);
+    return wrapper;
+  }
+
   function setPage(next) {
     page = next;
     menu.hidden = next !== "templates" && next !== "fonts";
@@ -137,16 +160,21 @@
     if (isTemplates) {
       for (const template of templates.values()) {
         const linked = [...fonts.values()].filter(font => font.template.id === template.id).length;
-        cards.append(card(template.name, `${linked} 个关联字体`, templateArt(template), () => openTemplate(template)));
+        cards.append(projectCard(template, "template", {
+          status: `${linked} 个关联字体`, image: templateArt(template), open: () => openTemplate(template)
+        }));
       }
       cards.append(card("创建新模板", "", icon("i-plus"), () => openTemplate(null), "desktop-card-new"));
     } else {
       for (const font of fonts.values()) {
         const stale = pendingTemplate(font);
         const linked = templates.get(font.template.id);
-        const status = stale ? (linked ? "模板有更新" : "找不到关联模板") : linked.name;
-        cards.append(card(font.name, status, stale ? icon("i-exclude") : fontArt(font),
-          () => stale ? resolve(font) : openFont(font), stale ? "pending" : ""));
+        cards.append(projectCard(font, "font", {
+          status: stale ? "模板有更新" : linked?.name ?? `${font.template.name}（内嵌模板）`,
+          image: stale ? icon("i-exclude") : fontArt(font),
+          open: () => stale ? resolve(font) : openFont(font),
+          className: stale ? "pending" : ""
+        }));
       }
     }
     const content = menu.querySelector(".desktop-library-content");
@@ -252,12 +280,10 @@
     const current = templates.get(font.template.id);
     setPage("resolve");
     $("desktop-resolve-title").textContent = font.name;
-    $("desktop-resolve-note").textContent = current ?
-      `「${current.name}」已修改，请选择如何处理该字体。` :
-      "找不到关联模板。可以用字体内嵌的模板恢复编辑。";
+    $("desktop-resolve-note").textContent = `「${current.name}」已修改，请选择如何处理该字体。`;
     resolvePanel.querySelector(".desktop-resolve-content").scrollTop = 0;
     $("desktop-adaptation").hidden = true;
-    $("desktop-preview-adaptation").hidden = !current;
+    $("desktop-preview-adaptation").hidden = false;
     $("desktop-apply-adaptation").hidden = true;
   }
 
@@ -321,8 +347,63 @@
     }
   }
 
+  function initializeUpdates() {
+    const button = $("desktop-update");
+    const panel = $("desktop-update-dialog");
+    const action = $("desktop-update-action");
+    const meter = $("desktop-update-progress");
+    const notes = $("desktop-update-notes");
+    let phase;
+    const messages = {
+      checking: "正在检查 GitHub Releases…",
+      current: "当前已是最新版本。",
+      available: "发现新版本。",
+      downloading: "正在下载更新包…",
+      preparing: "正在校验并解压更新包…",
+      ready: "更新已就绪。请保存当前修改，然后重启更新。",
+      installing: "即将退出程序并应用更新。"
+    };
+    const actions = { idle: "检查更新", current: "重新检查", checkFailed: "重试", available: "下载更新", ready: "重启并更新" };
+
+    function renderUpdate(state) {
+      phase = state.phase;
+      button.hidden = phase === "unsupported";
+      const available = Boolean(state.version);
+      button.classList.toggle("available", available);
+      button.textContent = available ? `更新 v${state.version}` : "检查更新";
+      $("desktop-update-version").textContent = available ?
+        `当前 v${state.currentVersion}　·　新版 v${state.version}` : `当前版本 v${state.currentVersion}`;
+      $("desktop-update-message").textContent = state.message ??
+        (phase === "downloading" ? `正在下载更新包… ${state.progress}%` : messages[phase] ?? "");
+      meter.hidden = phase !== "downloading";
+      meter.value = state.progress ?? 0;
+      notes.hidden = !state.notes;
+      notes.textContent = state.notes ?? "";
+      action.hidden = !actions[phase];
+      action.textContent = actions[phase] ?? "";
+    }
+
+    const report = () => studio.notify("无法处理更新，请稍后重试。");
+    button.addEventListener("click", () => {
+      panel.showModal();
+      if (["idle", "checkFailed", "current"].includes(phase)) desktop.checkForUpdate().catch(report);
+    });
+    panel.addEventListener("keydown", event => event.stopPropagation());
+    action.addEventListener("click", () => {
+      if (phase === "available") desktop.downloadUpdate().catch(report);
+      else if (phase === "ready") desktop.installUpdate().catch(report);
+      else desktop.checkForUpdate().catch(report);
+    });
+    desktop.onUpdate(renderUpdate);
+    desktop.updateStatus().then(state => {
+      renderUpdate(state);
+      if (state.phase === "idle") return desktop.checkForUpdate();
+    }).catch(report);
+  }
+
   function start(api) {
     studio = api;
+    initializeUpdates();
     $("use-template").textContent = "使用此模板创建字体";
     $("simplify-template").textContent = "简化为独立模板";
     nameInput.addEventListener("input", markChanged);

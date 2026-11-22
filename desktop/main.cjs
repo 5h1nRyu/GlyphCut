@@ -1,9 +1,10 @@
 "use strict";
 
 const { app, BrowserWindow, dialog, ipcMain, protocol } = require("electron");
-const { readFile, writeFile } = require("node:fs/promises");
-const { basename, extname, join } = require("node:path");
+const { readFile, unlink, writeFile } = require("node:fs/promises");
+const { basename, dirname, extname, join } = require("node:path");
 const { createProjects } = require("./projects.cjs");
+const { createUpdater } = require("./updates.cjs");
 
 const page = "glyph-cut://studio/index.html";
 const files = new Map([
@@ -24,6 +25,7 @@ const fileTypes = new Map([
 const contentPolicy = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'";
 let mainWindow;
 let projects;
+let updates;
 
 app.setName("Glyph Cut");
 protocol.registerSchemesAsPrivileged([
@@ -62,6 +64,39 @@ function registerFiles() {
       return projects[method](...args);
     });
   }
+  ipcMain.handle("project:delete", async (event, kind, id) => {
+    const window = trustedWindow(event);
+    const isTemplate = kind === "template";
+    if (!isTemplate && kind !== "font") throw new Error("项目类型无效。");
+    const data = await projects.load();
+    const record = (isTemplate ? data.templates : data.fonts).find(item => item.id === id);
+    if (!record) return false;
+    const label = isTemplate ? "模板" : "字体";
+    const { response } = await dialog.showMessageBox(window, {
+      type: "warning", title: "字形切片", message: `删除${label}「${record.name}」？`,
+      detail: isTemplate ? "关联字体会继续使用各自内嵌的模板。" : "该字体及其字形将被删除。",
+      buttons: ["取消", "删除"], defaultId: 0, cancelId: 0, noLink: true
+    });
+    if (response !== 1) return false;
+    await projects[isTemplate ? "deleteTemplate" : "deleteFont"](id);
+    return true;
+  });
+  updates = createUpdater({
+    version: app.getVersion(), executable: process.execPath,
+    notify: state => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("update:state", state);
+    }
+  });
+  for (const method of ["status", "check", "download"]) {
+    ipcMain.handle(`update:${method}`, event => {
+      trustedWindow(event);
+      return updates[method]();
+    });
+  }
+  ipcMain.handle("update:install", async event => {
+    trustedWindow(event);
+    if (await updates.install()) app.quit();
+  });
   ipcMain.handle("window:control", (event, action) => {
     const window = trustedWindow(event);
     if (action === "minimize") window.minimize();
@@ -114,11 +149,22 @@ function createWindow() {
       buttons: ["继续编辑", "放弃修改并关闭"], defaultId: 0, cancelId: 0
     });
     if (choice === 1) event.preventDefault();
+    else updates.cancelInstall();
   });
   for (const name of ["maximize", "unmaximize"]) {
     mainWindow.on(name, () => mainWindow.webContents.send("window:maximized", mainWindow.isMaximized()));
   }
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", async () => {
+    const window = mainWindow;
+    window.show();
+    if (updates.status().phase === "unsupported") return;
+    const log = join(dirname(process.execPath), ".glyphcut-update-error.txt");
+    try {
+      const detail = await readFile(log, "utf8");
+      await unlink(log);
+      if (!window.isDestroyed()) await dialog.showMessageBox(window, { type: "warning", title: "字形切片", message: detail.trim() });
+    } catch { /* A normal startup has no update failure to report. */ }
+  });
   mainWindow.on("closed", () => { mainWindow = undefined; });
   mainWindow.loadURL(page).catch(error => {
     dialog.showErrorBox("字形切片启动失败", error.message);
@@ -136,6 +182,7 @@ if (app.requestSingleInstanceLock()) {
     createWindow();
   });
   app.on("window-all-closed", () => app.quit());
+  app.on("quit", () => updates?.stop());
   app.on("before-quit", event => {
     const write = projects?.pending();
     if (!write) return;

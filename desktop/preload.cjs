@@ -9,6 +9,14 @@ contextBridge.exposeInMainWorld("glyphCutDesktop", {
   saveFont: (id, changes, simplified) => ipcRenderer.invoke("project:saveFont", id, changes, simplified),
   adaptFont: (id, template, glyphs) => ipcRenderer.invoke("project:adaptFont", id, template, glyphs),
   keepTemplate: id => ipcRenderer.invoke("project:keepTemplate", id),
+  deleteProject: (kind, id) => ipcRenderer.invoke("project:delete", kind, id),
+  updateStatus: () => ipcRenderer.invoke("update:status"),
+  checkForUpdate: () => ipcRenderer.invoke("update:check"),
+  downloadUpdate: () => ipcRenderer.invoke("update:download"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
+  onUpdate: callback => {
+    ipcRenderer.on("update:state", (_, state) => callback(state));
+  },
   controlWindow: action => ipcRenderer.invoke("window:control", action),
   onMaximized: callback => {
     ipcRenderer.on("window:maximized", (_, maximized) => callback(maximized));
