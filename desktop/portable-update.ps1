@@ -5,7 +5,7 @@ $incoming = Join-Path $work 'payload/GlyphCut-Windows-x64'
 $manifest = 'portable-files.json'
 
 function Read-PackageFiles($Root) {
-    $names = @(Get-Content -LiteralPath (Join-Path $Root $manifest) -Raw -Encoding UTF8 | ConvertFrom-Json)
+    $names = Get-Content -LiteralPath (Join-Path $Root $manifest) -Raw -Encoding UTF8 | ConvertFrom-Json
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($name in $names) {
         if ($name -isnot [string] -or $name -notmatch '^[\p{L}\p{N}][\p{L}\p{N}_.-]*$' -or
