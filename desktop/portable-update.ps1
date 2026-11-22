@@ -35,6 +35,15 @@ function Move-Entry($From, $To) {
     }
 }
 
+function Start-GlyphCut($Executable) {
+    $launch = [Diagnostics.ProcessStartInfo]::new()
+    $launch.FileName = $Executable
+    $launch.WorkingDirectory = $install
+    $launch.UseShellExecute = $false
+    $process = [Diagnostics.Process]::Start($launch)
+    if ($process) { $process.Dispose() }
+}
+
 if ($Update.mode -eq 'stage') {
     $bundle = Join-Path $work 'bundle.zip'
     if ((Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash -ne $Update.digest) {
@@ -97,7 +106,7 @@ try {
         Move-Entry (Join-Path $incoming $name) (Join-Path $install $name)
         $movedNew.Add($name)
     }
-    Start-Process -FilePath $exe -WorkingDirectory $install
+    Start-GlyphCut $exe
 } catch {
     $failure = $_.Exception.Message
     $restored = $true
@@ -114,15 +123,18 @@ try {
         try {
             $log = Join-Path $install '.glyphcut-update-error.txt'
             [IO.File]::WriteAllText($log, "$message`n已还原更新前的程序。")
-            Start-Process -FilePath $exe -WorkingDirectory $install
+            Start-GlyphCut $exe
             Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
             exit 1
-        } catch { $message += "`n可从原程序目录重新启动。" }
+        } catch { $message += "`n可从原程序目录重新启动。`n$($_.Exception.Message)" }
     } else {
         $message += "`n部分文件未能还原，原文件备份位置：`n$backup"
     }
-    Add-Type -AssemblyName System.Windows.Forms
-    [void][Windows.Forms.MessageBox]::Show($message, 'GlyphCut')
+    Write-Host $message
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        [void]$shell.Popup($message, 10, 'GlyphCut', 16)
+    } catch { Write-Host $_.Exception.Message }
     exit 1
 }
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
