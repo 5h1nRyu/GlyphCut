@@ -1,0 +1,178 @@
+.desktop-app {
+  min-width: 0;
+  min-height: 100vh;
+  --desktop-title-height: 42px;
+  --desktop-editor-height: 62px;
+}
+.desktop-app .top,
+.desktop-app:not(.desktop-editing) .workbench { display: none; }
+.desktop-app .workbench {
+  min-height: calc(100vh - var(--desktop-title-height) - var(--desktop-editor-height));
+}
+.desktop-app .drawing {
+  min-height: 500px;
+  height: calc(100vh - var(--desktop-title-height) - var(--desktop-editor-height) - 36px);
+}
+.desktop-titlebar {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--desktop-title-height);
+  padding-left: 15px;
+  background: #141b27;
+  color: #f6f8fc;
+  user-select: none;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+.desktop-brand, .desktop-window-controls { display: flex; align-items: center; }
+.desktop-brand { gap: 9px; font-size: 13px; font-weight: 700; }
+.desktop-brand .mark { width: 16px; height: 16px; gap: 2px; }
+.desktop-window-controls { height: 100%; }
+.desktop-window-controls button {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.desktop-window-controls button:hover { background: #303b4c; }
+.desktop-window-controls button:focus-visible { outline-offset: -3px; }
+.desktop-window-controls #desktop-close:hover { background: #c42b1c; }
+.desktop-window-controls svg { width: 14px; height: 14px; stroke-width: 1.15; }
+
+.desktop-library, .desktop-resolve {
+  position: relative;
+  height: calc(100vh - var(--desktop-title-height));
+  background: #edf0f5;
+}
+.desktop-library-content, .desktop-resolve-content {
+  height: 100%;
+  overflow: auto;
+  padding: 42px clamp(52px, 8vw, 126px) 40px;
+}
+.desktop-menu-heading, .desktop-cards, .desktop-library .desktop-empty,
+.desktop-resolve-content > * { max-width: 1400px; margin-inline: auto; }
+.desktop-menu-heading { margin-bottom: 24px; }
+.desktop-menu-heading h1, .desktop-resolve-heading h1 { font-size: clamp(1.5rem, 3vw, 2.1rem); }
+.desktop-menu-heading h1:focus-visible, .desktop-resolve-heading h1:focus-visible { outline: none; }
+.desktop-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
+  gap: 16px;
+}
+.desktop-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #cfd8e5;
+  border-radius: 10px;
+  text-align: left;
+  color: #161f2c;
+  background: #fff;
+}
+.desktop-card:hover { border-color: #728197; }
+.desktop-card-visual {
+  width: 100%;
+  height: 128px;
+  padding: 16px;
+  display: grid;
+  place-items: center;
+  color: #283546;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e4e9f0;
+}
+.desktop-card-visual .desktop-art { width: 100%; height: 96px; stroke: none; }
+.desktop-art .template-line { stroke: #5e7088; stroke-width: 1.1; vector-effect: non-scaling-stroke; }
+.desktop-art .template-disabled { fill: #c9d1df; }
+.desktop-card-caption { display: grid; gap: 3px; width: 100%; padding: 13px 14px; }
+.desktop-card-caption strong { line-height: 1.3; overflow-wrap: anywhere; }
+.desktop-card-caption small { color: #566175; overflow-wrap: anywhere; }
+.desktop-card.pending { border-color: #d36772; background: #fff3f4; color: #812735; }
+.desktop-card.pending:hover { border-color: #a12635; }
+.desktop-card.pending .desktop-card-visual { border-color: #f0cdd2; background: #fbe3e6; color: #9c3443; }
+.desktop-card.pending small { color: #993142; }
+.desktop-card-new { border-style: dashed; }
+.desktop-card-new .desktop-card-visual { background: #f1f7e7; color: #3b5634; }
+.desktop-card-new .desktop-card-caption { flex: 1; align-content: center; }
+.desktop-card-visual > svg:not(.desktop-art) { width: 32px; height: 32px; }
+.desktop-edge-link {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  width: 40px;
+  height: 78px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #d3dce8;
+  border-radius: 8px;
+  background: #fff;
+  color: #25354b;
+}
+.desktop-edge-link:hover { background: #e1edfa; }
+.desktop-edge-link svg { width: 24px; height: 24px; }
+.desktop-edge-left { left: 8px; }
+.desktop-edge-right { right: 8px; }
+.desktop-empty { color: #566175; padding-block: 20px; }
+
+.desktop-editor-bar {
+  display: flex;
+  align-items: center;
+  min-height: var(--desktop-editor-height);
+  gap: 12px;
+  padding: 8px 18px;
+  background: #fff;
+  border-bottom: 1px solid #dce2eb;
+}
+.desktop-editor-bar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .85rem;
+  white-space: nowrap;
+}
+.desktop-editor-bar input {
+  width: clamp(100px, 16vw, 265px);
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #d3dae4;
+  border-radius: 6px;
+  color: inherit;
+}
+.desktop-editor-bar .button { flex: none; }
+.desktop-font-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desktop-save-status { flex: 1; text-align: right; font-size: .8rem; color: #566175; }
+.desktop-save-status.dirty { color: #805710; }
+.desktop-resolve-content { padding-top: 30px; }
+.desktop-resolve-content > button { display: flex; margin-left: 0; }
+.desktop-resolve-heading { margin-block: 22px 18px; }
+.desktop-resolve-heading p { margin-top: 8px; color: #566175; }
+.desktop-resolve-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.desktop-adaptation { margin-top: 24px; }
+.desktop-adapted-glyphs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+}
+.desktop-glyph-preview { display: grid; justify-items: center; gap: 8px; margin: 0; padding: 11px 8px; border: 1px solid #d8e0eb; border-radius: 8px; background: #fff; }
+.desktop-glyph-preview svg { width: 100%; height: 78px; }
+.desktop-glyph-preview figcaption { font-family: var(--mono); color: #44536a; font-size: .85rem; }
+.desktop-glyph-preview figcaption small { margin-left: 4px; font-family: inherit; }
+.desktop-app.desktop-resolving .desktop-resolve-heading { color: #812735; }
+@media (max-width: 700px) {
+  .desktop-editor-bar { gap: 7px; padding-inline: 8px; }
+  .desktop-editor-bar label { flex: 1; min-width: 0; }
+  .desktop-editor-bar input { width: 100%; }
+  .desktop-editor-bar .button { min-width: 0; padding-inline: 7px; font-size: .79rem; }
+  .desktop-save-status { font-size: .7rem; }
+}

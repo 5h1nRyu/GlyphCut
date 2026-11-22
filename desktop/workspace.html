@@ -1,0 +1,47 @@
+<header class="desktop-titlebar">
+  <div class="desktop-brand"><span class="mark" aria-hidden="true"><b></b><b></b><b></b><b></b></span>字形切片</div>
+  <div class="desktop-window-controls" aria-label="窗口控制">
+    <button id="desktop-minimize" type="button" aria-label="最小化" title="最小化"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5h10"/></svg></button>
+    <button id="desktop-maximize" type="button" aria-label="最大化" title="最大化"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="desktop-maximize-icon" d="M3.5 3.5h9v9h-9z"/></svg></button>
+    <button id="desktop-close" type="button" aria-label="关闭" title="关闭"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
+  </div>
+</header>
+<main id="desktop-menu" class="desktop-library" aria-labelledby="desktop-menu-title" hidden>
+  <div class="desktop-library-content">
+    <header class="desktop-menu-heading"><h1 id="desktop-menu-title" tabindex="-1"></h1></header>
+    <div id="desktop-cards" class="desktop-cards"></div>
+    <p id="desktop-empty" class="desktop-empty" hidden>打开一个模板后，可使用该模板创建字体。</p>
+  </div>
+  <button id="desktop-prev-menu" type="button" class="desktop-edge-link desktop-edge-left" aria-label="模板菜单" title="模板菜单" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>
+  </button>
+  <button id="desktop-next-menu" type="button" class="desktop-edge-link desktop-edge-right" aria-label="字体菜单" title="字体菜单">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+  </button>
+</main>
+<div id="desktop-editor-bar" class="desktop-editor-bar" hidden>
+  <button id="desktop-editor-back" type="button" class="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg><span id="desktop-back-label"></span></button>
+  <label id="desktop-template-name-label">模板名称<input id="desktop-template-name" maxlength="100" spellcheck="false"></label>
+  <span id="desktop-font-title" class="desktop-font-title" hidden></span>
+  <span id="desktop-save-status" class="desktop-save-status" role="status"></span>
+  <button id="desktop-export-project" type="button" class="button">导出项目 JSON</button>
+  <button id="desktop-save" type="button" class="button accent">保存</button>
+</div>
+<main id="desktop-resolve" class="desktop-resolve" aria-labelledby="desktop-resolve-title" hidden>
+  <div class="desktop-resolve-content">
+    <button id="desktop-resolve-back" type="button" class="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>字体菜单</button>
+    <header class="desktop-resolve-heading">
+      <h1 id="desktop-resolve-title" tabindex="-1"></h1>
+      <p id="desktop-resolve-note"></p>
+    </header>
+    <div class="desktop-resolve-actions">
+      <button id="desktop-preview-adaptation" class="button accent" type="button">适应模板修改</button>
+      <button id="desktop-apply-adaptation" class="button accent" type="button" hidden>应用适配</button>
+      <button id="desktop-keep-template" class="button" type="button">保留旧模板</button>
+    </div>
+    <section id="desktop-adaptation" class="desktop-adaptation" aria-label="自动适配预览" hidden>
+      <p id="desktop-adaptation-empty" class="desktop-empty" hidden>该字体还没有设计字形。</p>
+      <div id="desktop-adapted-glyphs" class="desktop-adapted-glyphs"></div>
+    </section>
+  </div>
+</main>

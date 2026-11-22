@@ -1,8 +1,9 @@
 "use strict";
 
 const { app, BrowserWindow, dialog, ipcMain, protocol } = require("electron");
-const { mkdir, readFile, rename, writeFile } = require("node:fs/promises");
+const { readFile, writeFile } = require("node:fs/promises");
 const { basename, extname, join } = require("node:path");
+const { createProjects } = require("./projects.cjs");
 
 const page = "glyph-cut://studio/index.html";
 const files = new Map([
@@ -10,6 +11,8 @@ const files = new Map([
   ["/style.css", "text/css; charset=utf-8"],
   ["/geometry.js", "text/javascript; charset=utf-8"],
   ["/truetype.js", "text/javascript; charset=utf-8"],
+  ["/workspace.js", "text/javascript; charset=utf-8"],
+  ["/workspace.css", "text/css; charset=utf-8"],
   ["/studio.js", "text/javascript; charset=utf-8"]
 ]);
 const fileTypes = new Map([
@@ -20,7 +23,7 @@ const fileTypes = new Map([
 ]);
 const contentPolicy = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'";
 let mainWindow;
-let recoveryWrite;
+let projects;
 
 app.setName("Glyph Cut");
 protocol.registerSchemesAsPrivileged([
@@ -41,34 +44,32 @@ function registerFiles() {
     if (url.host !== "studio" || request.method !== "GET" || !type) {
       return new Response(null, { status: 404 });
     }
-    const data = await readFile(join(__dirname, "dist", basename(url.pathname)));
+    let data = await readFile(join(__dirname, "dist", basename(url.pathname)));
+    if (url.pathname === "/index.html") {
+      const shell = await readFile(join(__dirname, "workspace.html"), "utf8");
+      data = data.toString("utf8")
+        .replace('<script defer src="studio.js"></script>',
+          '<link rel="stylesheet" href="workspace.css"><script defer src="workspace.js"></script><script defer src="studio.js"></script>')
+        .replace("<body>", '<body class="desktop-app">' + shell);
+    }
     return new Response(data, { headers: { "Content-Type": type, "Content-Security-Policy": contentPolicy } });
   });
 
-  const directory = app.getPath("userData");
-  const recovery = join(directory, "recovery.glyphs.json");
-  ipcMain.handle("project:recover", async event => {
-    trustedWindow(event);
-    try {
-      return await readFile(recovery, "utf8");
-    } catch (error) {
-      if (error.code === "ENOENT") return null;
-      throw error;
+  projects = createProjects(join(app.getPath("userData"), "workspace"));
+  for (const method of ["load", "saveTemplate", "createFont", "saveFont", "adaptFont", "keepTemplate"]) {
+    ipcMain.handle(`project:${method}`, (event, ...args) => {
+      trustedWindow(event);
+      return projects[method](...args);
+    });
+  }
+  ipcMain.handle("window:control", (event, action) => {
+    const window = trustedWindow(event);
+    if (action === "minimize") window.minimize();
+    if (action === "maximize") {
+      if (window.isMaximized()) window.unmaximize();
+      else window.maximize();
     }
-  });
-  ipcMain.handle("project:autosave", (event, json) => {
-    trustedWindow(event);
-    if (typeof json !== "string") throw new Error("恢复稿格式无效。");
-    const write = (recoveryWrite ?? Promise.resolve()).catch(() => {}).then(async () => {
-      await mkdir(directory, { recursive: true });
-      const temporary = `${recovery}.tmp`;
-      await writeFile(temporary, json, "utf8");
-      await rename(temporary, recovery);
-    });
-    recoveryWrite = write;
-    return write.finally(() => {
-      if (recoveryWrite === write) recoveryWrite = undefined;
-    });
+    if (action === "close") window.close();
   });
   ipcMain.handle("file:save", async (event, filename, data) => {
     const window = trustedWindow(event);
@@ -94,6 +95,8 @@ function createWindow() {
     height: 895,
     minWidth: 520,
     minHeight: 480,
+    frame: false,
+    backgroundColor: "#edf0f5",
     show: false,
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
@@ -105,6 +108,16 @@ function createWindow() {
   mainWindow.setMenu(null);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.webContents.on("will-navigate", event => event.preventDefault());
+  mainWindow.webContents.on("will-prevent-unload", event => {
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: "question", title: "字形切片", message: "仍有未保存的修改。",
+      buttons: ["继续编辑", "放弃修改并关闭"], defaultId: 0, cancelId: 0
+    });
+    if (choice === 1) event.preventDefault();
+  });
+  for (const name of ["maximize", "unmaximize"]) {
+    mainWindow.on(name, () => mainWindow.webContents.send("window:maximized", mainWindow.isMaximized()));
+  }
   mainWindow.once("ready-to-show", () => mainWindow.show());
   mainWindow.on("closed", () => { mainWindow = undefined; });
   mainWindow.loadURL(page).catch(error => {
@@ -124,9 +137,10 @@ if (app.requestSingleInstanceLock()) {
   });
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", event => {
-    if (!recoveryWrite) return;
+    const write = projects?.pending();
+    if (!write) return;
     event.preventDefault();
-    recoveryWrite.then(() => app.quit(), () => app.quit());
+    write.then(() => app.quit(), () => app.quit());
   });
 } else {
   app.quit();

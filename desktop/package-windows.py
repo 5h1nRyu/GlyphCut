@@ -34,8 +34,10 @@ def package(runtime: Path, staging: Path) -> Path:
 
     app = target / "resources" / "app"
     (app / "dist").mkdir(parents=True)
-    for filename in ("main.cjs", "preload.cjs", "package.json"):
+    for filename in ("main.cjs", "preload.cjs", "projects.cjs", "workspace.html", "package.json"):
         copy2(DESKTOP / filename, app / filename)
+    for filename in ("workspace.js", "workspace.css"):
+        copy2(DESKTOP / filename, app / "dist" / filename)
     for filename in ("index.html", "style.css", "geometry.js", "truetype.js", "studio.js"):
         copy2(ROOT / "docs" / filename, app / "dist" / filename)
     copy2(DESKTOP / "使用说明.txt", target / "使用说明.txt")

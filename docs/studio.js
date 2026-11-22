@@ -22,6 +22,7 @@
   };
   const storageKey = "glyph-cut/studio-v1";
   const desktop = globalThis.glyphCutDesktop;
+  const workspace = globalThis.GlyphCutWorkspace;
   const copy = value => structuredClone(value);
   const pack = value => JSON.stringify(value);
   const blankDraft = () => ({ width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] });
@@ -148,11 +149,11 @@
   }
 
   function persist() {
-    const json = pack({ format: "glyph-cut-v1", ...project });
-    if (desktop) {
-      desktop.autosaveProject(json).catch(() => notify("自动保存失败，请使用「保存项目」保留进度。"));
+    if (workspace) {
+      workspace.markChanged();
       return;
     }
+    const json = pack({ format: "glyph-cut-v1", ...project });
     try { localStorage.setItem(storageKey, json); }
     catch { /* Project downloads also work with browser storage disabled. */ }
   }
@@ -590,7 +591,8 @@
       const unused = geometry ? new Set(geometry.unused.flatMap(edge => [...edge.sources])).size : 0;
       explanation.classList.toggle("warning", unused > 0);
       explanation.textContent = geometry ?
-        (unused ? `${unused} 条线有部分未形成分区，以虚线标出。` : "区块已生成，可进入字形设计。") :
+        (unused ? `${unused} 条线有部分未形成分区，以虚线标出。` :
+          workspace ? "区块已生成，可使用此模板创建字体。" : "区块已生成，可进入字形设计。") :
         (project.template ? "线条已修改，重新生成可预览新的分区。" : "绘制分割线后生成区块。");
       if (confirmed && project.disabledRegions.length) explanation.textContent += `已禁用 ${project.disabledRegions.length} 个区块。`;
       $("use-template").disabled = !confirmed;
@@ -939,7 +941,7 @@
     if (button) activateTool(button.dataset.tool);
   });
   $("generate").addEventListener("click", () => generate());
-  $("use-template").addEventListener("click", () => generate(true));
+  $("use-template").addEventListener("click", () => workspace ? workspace.createFont() : generate(true));
   $("mode-glyph").addEventListener("click", () => switchMode("glyph"));
   $("mode-template").addEventListener("click", () => switchMode("template"));
   $("undo").addEventListener("click", () => travel(previous, future));
@@ -951,10 +953,11 @@
   $("load-example").addEventListener("click", () => {
     resetPointer();
     change(() => {
-      project = makeDemo();
-      group = "digits";
+      const demo = makeDemo();
+      project = workspace ? { ...newProject(), draft: demo.draft, template: demo.template } : demo;
+      group = groupFor(project.character);
     });
-    notify("已载入七段数字。切换到模板编辑可查看分割线。");
+    notify(workspace ? "已载入七段数字模板。" : "已载入七段数字。切换到模板编辑可查看分割线。");
   });
   $("show-grid").addEventListener("change", event => {
     grid = event.target.checked;
@@ -978,7 +981,12 @@
   $("zoom-out").addEventListener("click", () => zoomTo(zoom / 1.25));
   $("zoom-in").addEventListener("click", () => zoomTo(zoom * 1.25));
   $("fit").addEventListener("click", () => zoomTo(1));
-  new ResizeObserver(() => renderBoard()).observe($("stage"));
+  new ResizeObserver(() => {
+    if (!workspace) renderBoard();
+    else if (workspace.editing()) requestAnimationFrame(() => {
+      if (workspace.editing()) renderBoard();
+    });
+  }).observe($("stage"));
 
   $("glyph-tools").addEventListener("click", event => {
     const button = event.target.closest("[data-glyph-tool]");
@@ -1083,10 +1091,13 @@
 
   $("save").addEventListener("click", () => download(JSON.stringify({ format: "glyph-cut-v1", ...project }, null, 2),
     "application/json", `${safeName(project.fontName)}.glyphs.json`));
-  $("export-template").addEventListener("click", () => download(JSON.stringify({
-    format: "glyph-cut-v1", draft: project.template, template: project.template,
-    disabledRegions: project.disabledRegions, mode: "template"
-  }, null, 2), "application/json", `${safeName(project.fontName)}.template.json`));
+  $("export-template").addEventListener("click", () => {
+    if (workspace) return workspace.exportTemplate();
+    return download(JSON.stringify({
+      format: "glyph-cut-v1", draft: project.template, template: project.template,
+      disabledRegions: project.disabledRegions, mode: "template"
+    }, null, 2), "application/json", `${safeName(project.fontName)}.template.json`);
+  });
   $("import").addEventListener("click", () => $("open-file").click());
   $("open-file").addEventListener("change", async event => {
     const file = event.target.files[0];
@@ -1196,6 +1207,7 @@ ${paths}
   });
 
   document.addEventListener("keydown", event => {
+    if (workspace && !workspace.editing()) return;
     if (event.target.closest?.("input, textarea, [contenteditable]")) return;
     const key = event.key.toLowerCase();
     if ((event.ctrlKey || event.metaKey) && (key === "z" || key === "y")) {
@@ -1217,14 +1229,33 @@ ${paths}
 
   async function start() {
     document.body.inert = true;
-    try {
-      const saved = desktop ? await desktop.recoverProject() : localStorage.getItem(storageKey);
-      if (saved) project = readProject(JSON.parse(saved));
-    } catch {
-      if (desktop) notify("无法恢复上次编辑，可手动导入已保存的项目。");
+    if (workspace) {
+      await workspace.start({
+        project: () => project, geometry: getGeometry, notify, download, safeName,
+        prepareTemplate: () => { if (!ready()) generate(); },
+        open: fields => {
+          project = readProject({ ...newProject(), ...fields, format: "glyph-cut-v1" });
+          group = groupFor(project.character);
+          tool = "line";
+          glyphTool = "regions";
+          zoom = 1;
+          previous.length = 0;
+          future.length = 0;
+          resetPointer();
+          render();
+          $("stage").scrollTo(0, 0);
+        }
+      });
+    } else {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) project = readProject(JSON.parse(saved));
+      } catch {
+        // The editor can start with a blank project if browser storage is unavailable.
+      }
+      group = groupFor(project.character);
+      render();
     }
-    group = groupFor(project.character);
-    render();
     document.body.inert = false;
   }
 

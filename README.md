@@ -5,7 +5,7 @@
 - [打开网页版](https://5h1nryu.github.io/GlyphCut/)
 - [下载 Windows x64 免安装版](https://github.com/5h1nRyu/GlyphCut/releases)
 
-Windows 版下载后完整解压，运行 `GlyphCut.exe`。网页与桌面版都能通过「保存项目」和「导入」交换 `.glyphs.json` 文件。网页的自动保存按浏览器和网址区分，从其他网址迁移时先导出项目。
+Windows 版下载后完整解压，运行 `GlyphCut.exe`。程序启动后打开模板菜单，在具体模板页面可以创建字体。模板和字体分别保存于 `%APPDATA%\Glyph Cut\workspace`。网页的自动保存按浏览器和网址区分，可通过网页的「保存项目」和「导入」迁移。
 
 ## 本地运行与打包
 

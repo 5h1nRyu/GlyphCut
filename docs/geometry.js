@@ -565,7 +565,7 @@ globalThis.GlyphGeometry = (() => {
 
   // Reconnect regions across the boundaries absent from the original template.
   // The surviving source intervals identify the original face on each side.
-  function originalFaces(original, refinement, sourceIds) {
+  function originalFaces(original, refinement, sourceIds, sharedFrame = true) {
     const spans = sourceFaceSpans(original.boundary);
     const { root, join } = components(refinement.faces.length);
     const anchors = [];
@@ -573,6 +573,7 @@ globalThis.GlyphGeometry = (() => {
       const sides = [edge.face, edge.twin.face];
       let matched = false;
       for (const { source, interval: [a, b] } of edge.intervals) {
+        if (source < 0 && !sharedFrame) continue;
         const old = facesNearParameter(spans, source < 0 ? source : sourceIds[source], (a + b) / 2);
         if (!old) continue;
         matched = true;
@@ -586,9 +587,58 @@ globalThis.GlyphGeometry = (() => {
     for (const [id, old] of anchors) {
       const component = root(id);
       if (!parents.has(component)) parents.set(component, old);
-      else if (parents.get(component) !== old) parents.set(component, -1);
+      else if (parents.get(component) !== old) parents.set(component, -2);
     }
-    return refinement.faces.map(({ id }) => parents.get(root(id)) ?? -1);
+    return refinement.faces.map(({ id }) => parents.get(root(id)) ?? -2);
+  }
+
+  function adaptGlyphs(oldTemplate, newTemplate, glyphs) {
+    if (!Object.keys(glyphs).length) return {};
+    const oldSpec = oldTemplate.spec;
+    const newSpec = newTemplate.spec;
+    const oldMesh = arrange(oldSpec);
+    const newMesh = arrange(newSpec);
+    const framed = ({ width, height, strokes }) => {
+      const corners = [[0, 0], [width, 0], [width, height], [0, height]];
+      return strokes.concat(corners.map((p, i) => line(p, corners[(i + 1) % 4])));
+    };
+    const oldStrokes = framed(oldSpec);
+    const newStrokes = framed(newSpec);
+    const overlay = arrange({
+      width: Math.max(oldSpec.width, newSpec.width),
+      height: Math.max(oldSpec.height, newSpec.height),
+      strokes: oldStrokes.concat(newStrokes)
+    });
+    const source = (index, count) => index < count ? index : count - index - 1;
+    const oldSources = oldStrokes.map((_, i) => source(i, oldSpec.strokes.length));
+    const newSources = Array(oldStrokes.length).concat(newStrokes.map((_, i) => source(i, newSpec.strokes.length)));
+    const oldParents = originalFaces(oldMesh, overlay, oldSources, false);
+    const newParents = originalFaces(newMesh, overlay, newSources, false);
+    const area = face => face.loops.reduce((total, loop) => total + signedArea(loop), 0);
+    const overlaps = newMesh.faces.map(() => new Map());
+    for (const face of overlay.faces) {
+      const target = newParents[face.id];
+      const origin = oldParents[face.id];
+      if (target === -1) continue;
+      if (target < -1 || origin < -1) throw new Error("无法准确比较两个模板的分区。");
+      if (origin === -1) continue;
+      const coverage = overlaps[target];
+      coverage.set(origin, (coverage.get(origin) ?? 0) + area(face));
+    }
+    const oldDisabled = new Set(oldTemplate.disabledRegions);
+    const newDisabled = new Set(newTemplate.disabledRegions);
+    const regions = newMesh.faces.filter(face => !newDisabled.has(face.id)).map(face => ({
+      id: face.id, halfArea: area(face) / 2, coverage: overlaps[face.id]
+    }));
+    return Object.fromEntries(Object.entries(glyphs).flatMap(([character, ids]) => {
+      const filled = new Set(ids.filter(id => !oldDisabled.has(id)));
+      const selected = regions.filter(({ halfArea, coverage }) => {
+        let overlapArea = 0;
+        for (const [origin, size] of coverage) if (filled.has(origin)) overlapArea += size;
+        return overlapArea - halfArea > 1e-10 * halfArea;
+      }).map(({ id }) => id);
+      return selected.length ? [[character, selected]] : [];
+    }));
   }
 
   function inheritedFaces(oldSpec, oldMesh, newSpec, newMesh) {
@@ -691,6 +741,6 @@ globalThis.GlyphGeometry = (() => {
     return { draft, geometry: next, glyphs: nextGlyphs };
   }
 
-  return { arrange, trace, outlineVertices, path, pointConnections, enclosedByPath, regionAt, regionsAlong, inheritedFaces,
+  return { arrange, trace, outlineVertices, path, pointConnections, enclosedByPath, regionAt, regionsAlong, inheritedFaces, adaptGlyphs,
     simplify, strokeParts, point, number, signedArea };
 })();
