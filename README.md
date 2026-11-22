@@ -10,4 +10,5 @@ Windows 版下载后完整解压，运行 `GlyphCut.exe`。程序启动后打开
 ## 本地运行与打包
 
 - 网页入口是 `docs/index.html`。可以用 `python3 -m http.server 8000 --directory docs` 本地预览。
-- 在仓库根目录运行 `python3 desktop/package-windows.py` 可生成 `GlyphCut-Windows-x64.zip`。脚本会获取并校验指定版本的 Electron，再把 `docs/` 中的网页复制进桌面程序。程序打包完成后可离线运行。
+- 在 GitHub 的「Actions → 打包 Windows x64」中点「Run workflow」。构建完成后，从该次运行的「Artifacts」下载 `GlyphCut-Windows-x64.zip`，也可把这个文件上传到 Release。
+- 在仓库根目录运行 `python3 desktop/package-windows.py` 也可生成程序包。已有 Electron 压缩包时，可运行 `python3 desktop/package-windows.py electron-v45.4.1-win32-x64.zip` 跳过下载。脚本会校验 Electron，生成的程序可离线运行。

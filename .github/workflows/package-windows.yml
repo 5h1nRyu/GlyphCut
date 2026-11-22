@@ -1,0 +1,28 @@
+name: 打包 Windows x64
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/package-windows.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: 生成程序包
+        run: python3 desktop/package-windows.py
+      - name: 上传程序包
+        uses: actions/upload-artifact@v7
+        with:
+          path: GlyphCut-Windows-x64.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
