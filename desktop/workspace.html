@@ -23,9 +23,19 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
   </button>
 </main>
+<main id="desktop-template-setup" class="desktop-template-setup" aria-labelledby="desktop-setup-title" hidden>
+  <div class="desktop-setup-content">
+    <button id="desktop-setup-back" class="button" type="button">返回模板菜单</button>
+    <h1 id="desktop-setup-title">创建新模板</h1>
+    <div id="desktop-setup-fields">
+      <label class="desktop-template-label">模板名称
+        <input id="desktop-setup-name" form="dimensions" maxlength="100" spellcheck="false" required>
+      </label>
+    </div>
+  </div>
+</main>
 <div id="desktop-editor-bar" class="desktop-editor-bar" hidden>
   <button id="desktop-editor-back" type="button" class="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg><span id="desktop-back-label"></span></button>
-  <label id="desktop-template-name-label">模板名称<input id="desktop-template-name" maxlength="100" spellcheck="false"></label>
   <span id="desktop-font-title" class="desktop-font-title" hidden></span>
   <span id="desktop-save-status" class="desktop-save-status" role="status"></span>
   <button id="desktop-export-project" type="button" class="button">导出项目 JSON</button>

@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld("glyphCutDesktop", {
     ipcRenderer.on("update:state", (_, state) => callback(state));
   },
   controlWindow: action => ipcRenderer.invoke("window:control", action),
+  onSaveBeforeClose: callback => {
+    ipcRenderer.on("window:save-before-close", () => callback());
+  },
   onMaximized: callback => {
     ipcRenderer.on("window:maximized", (_, maximized) => callback(maximized));
   },

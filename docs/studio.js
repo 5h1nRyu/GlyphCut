@@ -174,6 +174,7 @@
   function change(edit) {
     checkpoint();
     edit();
+    if (workspace && project.mode === "template" && !ready()) updateTemplate();
     persist();
     render();
   }
@@ -215,41 +216,45 @@
     render();
   }
 
+  function updateTemplate() {
+    const next = getGeometry(project.draft);
+    const existingGlyphs = Object.entries(project.glyphs);
+    const nextGlyphs = {};
+    let nextDisabled = [];
+    let removed = 0;
+    let removedDisabled = 0;
+    if (existingGlyphs.length || project.disabledRegions.length) {
+      const current = getGeometry(project.template);
+      const nextIds = new Map(next.faces.map(face => [face.key, face.id]));
+      const inherited = G.inheritedFaces(project.template, current, project.draft, next);
+      const replacements = current.faces.map(({ id, key }) => {
+        if (inherited?.[id]?.length) return inherited[id];
+        const identical = nextIds.get(key);
+        return identical === undefined ? [] : [identical];
+      });
+      const remap = ids => [...new Set(ids.flatMap(id => replacements[id] ?? []))].sort((a, b) => a - b);
+      nextDisabled = remap(project.disabledRegions);
+      removedDisabled = project.disabledRegions.filter(id => !replacements[id]?.length).length;
+      const disabled = new Set(nextDisabled);
+      for (const [ch, ids] of existingGlyphs) {
+        const kept = remap(ids).filter(id => !disabled.has(id));
+        removed += ids.filter(id => !replacements[id]?.some(child => !disabled.has(child))).length;
+        if (kept.length) nextGlyphs[ch] = kept;
+      }
+    }
+    project.template = copy(project.draft);
+    project.glyphs = nextGlyphs;
+    project.disabledRegions = nextDisabled;
+    const changes = [];
+    if (removed) changes.push(`${removed} 处旧选区已取消`);
+    if (removedDisabled) changes.push(`${removedDisabled} 个旧区块的禁用状态已取消`);
+    if (changes.length) notify(`分区改变，${changes.join("，")}。可撤销恢复。`);
+  }
+
   function generate(enterGlyphs = false) {
     if (!ready()) {
-      const next = getGeometry(project.draft);
-      const existingGlyphs = Object.entries(project.glyphs);
-      const nextGlyphs = {};
-      let nextDisabled = [];
-      let removed = 0;
-      let removedDisabled = 0;
-      if (existingGlyphs.length || project.disabledRegions.length) {
-        const current = getGeometry(project.template);
-        const nextIds = new Map(next.faces.map(face => [face.key, face.id]));
-        const inherited = G.inheritedFaces(project.template, current, project.draft, next);
-        const replacements = current.faces.map(({ id, key }) => {
-          if (inherited?.[id]?.length) return inherited[id];
-          const identical = nextIds.get(key);
-          return identical === undefined ? [] : [identical];
-        });
-        const remap = ids => [...new Set(ids.flatMap(id => replacements[id] ?? []))].sort((a, b) => a - b);
-        nextDisabled = remap(project.disabledRegions);
-        removedDisabled = project.disabledRegions.filter(id => !replacements[id]?.length).length;
-        const disabled = new Set(nextDisabled);
-        for (const [ch, ids] of existingGlyphs) {
-          const kept = remap(ids).filter(id => !disabled.has(id));
-          removed += ids.filter(id => !replacements[id]?.some(child => !disabled.has(child))).length;
-          if (kept.length) nextGlyphs[ch] = kept;
-        }
-      }
       checkpoint();
-      project.template = copy(project.draft);
-      project.glyphs = nextGlyphs;
-      project.disabledRegions = nextDisabled;
-      const changes = [];
-      if (removed) changes.push(`${removed} 处旧选区已取消`);
-      if (removedDisabled) changes.push(`${removedDisabled} 个旧区块的禁用状态已取消`);
-      if (changes.length) notify(`分区改变，${changes.join("，")}。可撤销恢复。`);
+      updateTemplate();
     }
     resetPointer();
     if (enterGlyphs) project.mode = "glyph";
@@ -525,6 +530,7 @@
   function renderSample() {
     const sample = $("sample-output");
     sample.replaceChildren();
+    workspace?.refreshSample();
     if (project.mode !== "glyph" || !project.sample) return;
     const geometry = getGeometry(project.template);
     const { width, height } = project.template;
@@ -577,7 +583,7 @@
     const confirmed = ready();
     if (!glyphMode) {
       if (tool === "exclude" && !confirmed) tool = "line";
-      axes.forEach(id => { $(id).value = project.draft[id]; });
+      if (!workspace) axes.forEach(id => { $(id).value = project.draft[id]; });
       $("tools").querySelectorAll("button").forEach(button => {
         if (button.dataset.tool === "exclude") button.disabled = !confirmed;
         const active = button.dataset.tool === tool;
@@ -922,6 +928,10 @@
   $("dimensions").addEventListener("submit", event => {
     event.preventDefault();
     const updated = Object.fromEntries(axes.map(id => [id, $(id).valueAsNumber]));
+    if (workspace) {
+      workspace.createTemplate(updated);
+      return;
+    }
     if (axes.every(id => updated[id] === project.draft[id])) return;
     const strokes = project.draft.strokes.map(edge => ({
       a: snap(edge.a, updated), b: snap(edge.b, updated),
@@ -952,12 +962,22 @@
   });
   $("load-example").addEventListener("click", () => {
     resetPointer();
+    const demo = makeDemo();
     change(() => {
-      const demo = makeDemo();
-      project = workspace ? { ...newProject(), draft: demo.draft, template: demo.template } : demo;
+      if (workspace) {
+        const original = demo.draft;
+        const draft = project.draft;
+        const fit = ([x, y]) => snap([x * draft.width / original.width, y * draft.height / original.height], draft);
+        draft.strokes = original.strokes.map(({ a, b, c }) => ({
+          a: fit(a), b: fit(b), ...(c ? { c: fit(c) } : {})
+        })).filter(({ a, b }) => !same(a, b));
+        project.disabledRegions = [];
+      } else {
+        project = demo;
+      }
       group = groupFor(project.character);
     });
-    notify(workspace ? "已载入七段数字模板。" : "已载入七段数字。切换到模板编辑可查看分割线。");
+    notify(workspace ? "已按当前画布和网格载入示例。" : "已载入七段数字。切换到模板编辑可查看分割线。");
   });
   $("show-grid").addEventListener("change", event => {
     grid = event.target.checked;
@@ -1232,7 +1252,7 @@ ${paths}
     document.body.inert = true;
     if (workspace) {
       await workspace.start({
-        project: () => project, geometry: getGeometry, notify, download, safeName,
+        project: () => project, geometry: getGeometry, blankDraft, validateSpec, notify, download, safeName,
         prepareTemplate: () => { if (!ready()) generate(); },
         open: fields => {
           project = readProject({ ...newProject(), ...fields, format: "glyph-cut-v1" });

@@ -47,7 +47,11 @@
 <main class="workbench">
   <aside class="panel left" aria-label="绘图设置">
     <div class="panel-inner" id="template-controls">
-      <section>
+      <section id="desktop-template-identity" hidden>
+        <h2 id="desktop-template-name-title">模板名称</h2>
+        <input id="desktop-template-name" aria-labelledby="desktop-template-name-title" maxlength="100" spellcheck="false">
+      </section>
+      <section id="canvas-settings">
         <h2>画布与网格</h2>
         <form id="dimensions">
           <div class="fields">
@@ -56,7 +60,7 @@
             <label>单格宽<input id="stepX" type="number" min=".01" max="8192" step="any" required></label>
             <label>单格高<input id="stepY" type="number" min=".01" max="8192" step="any" required></label>
           </div>
-          <button class="button block" type="submit">应用尺寸</button>
+          <button class="button block" id="apply-dimensions" type="submit">应用尺寸</button>
         </form>
       </section>
       <section class="split">

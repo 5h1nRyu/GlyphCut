@@ -6,6 +6,7 @@
   const $ = id => document.getElementById(id);
   const menu = $("desktop-menu");
   const editorBar = $("desktop-editor-bar");
+  const templateSetup = $("desktop-template-setup");
   const resolvePanel = $("desktop-resolve");
   const nameInput = $("desktop-template-name");
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -19,6 +20,13 @@
   let resolvingFont;
   let preview;
   let busy = false;
+  let activeAction;
+  let saving;
+  let autoSaveTimer;
+  let saveFailed = false;
+  let closing = false;
+  let allowUnload = false;
+  let refreshSample;
   let templates = new Map();
   let fonts = new Map();
 
@@ -33,8 +41,7 @@
   const simplified = () => page === "font" && !sameShape(editingRecord.template, templateFields());
   function editorState() {
     if (page === "template") return { name: nameInput.value.trim(), ...templateFields() };
-    const { character, ...fields } = fontFields();
-    return { ...fields, ...templateFields() };
+    return { ...fontFields(), ...templateFields() };
   }
   const dirty = () => editing() && (!editingRecord || !same(editorState(), savedEditorState));
   const pendingTemplate = font => {
@@ -166,8 +173,10 @@
     page = next;
     menu.hidden = next !== "templates" && next !== "fonts";
     editorBar.hidden = !editing();
+    templateSetup.hidden = next !== "setup";
     resolvePanel.hidden = next !== "resolve";
     document.body.classList.toggle("desktop-editing", editing());
+    document.body.classList.toggle("desktop-template-editing", next === "template");
     document.body.classList.toggle("desktop-resolving", next === "resolve");
   }
 
@@ -192,7 +201,7 @@
           status: `${linked} 个关联字体`, image: templateArt(template), open: () => openTemplate(template)
         }));
       }
-      cards.append(card("创建新模板", "", icon("i-plus"), () => openTemplate(null), "desktop-card-new"));
+      cards.append(card("创建新模板", "", icon("i-plus"), openTemplateSetup, "desktop-card-new"));
     } else {
       for (const font of fonts.values()) {
         const stale = pendingTemplate(font);
@@ -229,17 +238,32 @@
     }
   }
 
+  function openTemplateSetup() {
+    const draft = studio.blankDraft();
+    $("desktop-setup-name").value = "";
+    for (const key of ["width", "height", "stepX", "stepY"]) $(key).value = draft[key];
+    setPage("setup");
+  }
+
+  async function createTemplate(dimensions) {
+    const name = $("desktop-setup-name").value.trim();
+    if (!name) throw new Error("请输入模板名称。");
+    const spec = studio.validateSpec({ ...dimensions, strokes: [] });
+    const template = await desktop.saveTemplate({ name, spec, disabledRegions: [] });
+    templates.set(template.id, template);
+    openTemplate(template);
+  }
+
   function openTemplate(template) {
     editingRecord = template;
+    saveFailed = false;
     setPage("template");
-    nameInput.value = template?.name ?? "未命名模板";
-    $("desktop-template-name-label").hidden = false;
+    nameInput.value = template.name;
     $("desktop-font-title").hidden = true;
     $("desktop-back-label").textContent = "模板菜单";
-    studio.open(template ? { draft: template.spec, template: template.spec,
-      disabledRegions: template.disabledRegions } : {});
+    studio.open({ draft: template.spec, template: template.spec, disabledRegions: template.disabledRegions });
     savedEditorState = structuredClone(editorState());
-    markChanged();
+    updateSaveStatus();
   }
 
   function openFont(font) {
@@ -248,45 +272,77 @@
       return;
     }
     editingRecord = font;
+    saveFailed = false;
     setPage("font");
-    $("desktop-template-name-label").hidden = true;
     $("desktop-font-title").hidden = false;
     $("desktop-back-label").textContent = "字体菜单";
     studio.open({ ...font, fontName: font.name, draft: font.template.spec, template: font.template.spec,
       disabledRegions: font.template.disabledRegions, mode: "glyph" });
     savedEditorState = structuredClone(editorState());
-    markChanged();
+    updateSaveStatus();
   }
 
-  function markChanged() {
+  function updateSaveStatus() {
     if (!editing()) return;
     const status = $("desktop-save-status");
     const unsaved = dirty();
     status.classList.toggle("dirty", unsaved);
-    status.textContent = simplified() ? "保存时另存为独立模板" : unsaved ? "未保存" : "已保存";
+    status.textContent = saving ? "正在保存…" : !unsaved ? "已保存" : saveFailed ? "保存失败" : "等待自动保存";
     if (page === "font") $("desktop-font-title").textContent = project().fontName;
   }
 
-  async function save() {
+  function markChanged() {
+    clearTimeout(autoSaveTimer);
+    saveFailed = false;
+    updateSaveStatus();
+    if (dirty() && (page !== "template" || nameInput.value.trim())) {
+      autoSaveTimer = setTimeout(() => save().catch(error => studio.notify(error.message)), 650);
+    }
+  }
+
+  async function writeEditor() {
+    if (page === "template" && !nameInput.value.trim()) throw new Error("请输入模板名称。");
+    const state = structuredClone(editorState());
+    const { spec, disabledRegions, ...fields } = state;
     if (page === "template") {
-      if (!nameInput.value.trim()) throw new Error("请输入模板名称。");
-      studio.prepareTemplate();
-      editingRecord = await desktop.saveTemplate({ id: editingRecord?.id, name: nameInput.value, ...templateFields() });
+      editingRecord = await desktop.saveTemplate({ id: editingRecord.id, ...fields, spec, disabledRegions });
       templates.set(editingRecord.id, editingRecord);
     } else {
-      const fields = fontFields();
       if (!fields.name) throw new Error("请输入字体名称。");
-      const result = await desktop.saveFont(editingRecord.id, fields, simplified() ? templateFields() : null);
+      const result = await desktop.saveFont(editingRecord.id, fields, simplified() ? { spec, disabledRegions } : null);
       editingRecord = result.font;
       fonts.set(editingRecord.id, editingRecord);
       if (result.template) templates.set(result.template.id, result.template);
     }
-    savedEditorState = structuredClone(editorState());
-    markChanged();
+    savedEditorState = state;
+  }
+
+  function save() {
+    clearTimeout(autoSaveTimer);
+    if (saving) return saving;
+    if (!dirty()) return;
+    saving = writeEditor().then(() => {
+      saveFailed = false;
+    }, error => {
+      saveFailed = true;
+      throw error;
+    }).finally(() => {
+      saving = undefined;
+      if (saveFailed) updateSaveStatus();
+      else markChanged();
+    });
+    updateSaveStatus();
+    return saving;
+  }
+
+  async function flushSave() {
+    document.activeElement?.blur();
+    clearTimeout(autoSaveTimer);
+    while (saving || dirty()) await save();
   }
 
   async function createFont() {
-    await save();
+    await flushSave();
     const font = await desktop.createFont(editingRecord.id);
     fonts.set(font.id, font);
     openFont(font);
@@ -356,23 +412,81 @@
   async function run(action) {
     if (busy) return;
     busy = true;
-    const content = [menu, editorBar, resolvePanel, document.querySelector(".workbench")];
+    const content = [menu, templateSetup, editorBar, resolvePanel, document.querySelector(".workbench")];
     content.forEach(node => { node.inert = true; });
     const previousPage = page;
+    activeAction = Promise.resolve().then(action);
     try {
-      await action();
+      return await activeAction;
     } catch (error) {
       studio.notify(error.message);
     } finally {
+      activeAction = undefined;
       busy = false;
       content.forEach(node => { node.inert = false; });
       if (page !== previousPage) {
         if (!menu.hidden) $("desktop-menu-title").focus({ preventScroll: true });
         else if (!resolvePanel.hidden) $("desktop-resolve-title").focus({ preventScroll: true });
+        else if (page === "setup") $("desktop-setup-name").focus();
         else if (page === "template") nameInput.focus();
         else if (page === "font") $("font-name").focus();
       }
     }
+  }
+
+  function initializeSampleScroll() {
+    const viewport = $("sample-output");
+    let frame = null;
+    let position = 0;
+    let direction = 1;
+    let lastTime;
+    let holdUntil = 0;
+    let hovered = false;
+
+    function tick(time) {
+      frame = null;
+      const remaining = viewport.scrollWidth - viewport.clientWidth;
+      if (!viewport.clientWidth || remaining <= 0 || hovered) {
+        lastTime = undefined;
+        return;
+      }
+      const elapsed = lastTime === undefined ? 0 : Math.min(time - lastTime, 50);
+      lastTime = time;
+      if (time >= holdUntil) {
+        position = Math.max(0, Math.min(remaining, position + direction * elapsed * 0.035));
+        if ((direction > 0 && position >= remaining) || (direction < 0 && position <= 0)) {
+          direction *= -1;
+          holdUntil = time + 650;
+        }
+        viewport.scrollLeft = position;
+      }
+      resume();
+    }
+
+    function resume() {
+      if (frame === null && !hovered) frame = requestAnimationFrame(tick);
+    }
+
+    viewport.addEventListener("pointerenter", () => {
+      hovered = true;
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      lastTime = undefined;
+    });
+    viewport.addEventListener("pointerleave", () => {
+      hovered = false;
+      resume();
+    });
+    new ResizeObserver(resume).observe(viewport);
+    refreshSample = () => {
+      position = 0;
+      direction = 1;
+      lastTime = undefined;
+      holdUntil = performance.now() + 650;
+      viewport.scrollLeft = 0;
+      hovered = viewport.matches(":hover");
+      resume();
+    };
   }
 
   function initializeUpdates() {
@@ -389,7 +503,7 @@
       available: "发现新版本。",
       downloading: "正在下载更新包…",
       preparing: "正在校验并解压更新包…",
-      ready: "更新已就绪。请保存当前修改，然后重启更新。",
+      ready: "更新已就绪。重启前会自动保存当前修改。",
       installing: "即将退出程序并应用更新。"
     };
     const actions = { idle: "检查更新", current: "重新检查", checkFailed: "重试", available: "下载更新", ready: "重启并更新" };
@@ -422,7 +536,11 @@
     browser.addEventListener("click", () => desktop.openReleasePage().catch(report));
     action.addEventListener("click", () => {
       if (phase === "available") desktop.downloadUpdate().catch(report);
-      else if (phase === "ready") desktop.installUpdate().catch(report);
+      else if (phase === "ready" && !busy) {
+        run(async () => { await flushSave(); return true; }).then(saved => {
+          if (saved) return desktop.installUpdate();
+        }).catch(report);
+      }
       else desktop.checkForUpdate().catch(report);
     });
     desktop.onUpdate(renderUpdate);
@@ -437,16 +555,25 @@
     initializeUpdates();
     $("use-template").textContent = "使用此模板创建字体";
     $("simplify-template").textContent = "简化为独立模板";
+    $("desktop-setup-fields").append($("dimensions"));
+    $("apply-dimensions").textContent = "创建并编辑";
+    $("desktop-template-identity").hidden = false;
+    $("tools").querySelector("[data-tool=exclude]").removeAttribute("title");
+    initializeSampleScroll();
     nameInput.addEventListener("input", markChanged);
-    $("desktop-save").addEventListener("click", () => run(save));
-    $("desktop-export-project").addEventListener("click", () => run(() => exportProject()));
-    $("desktop-editor-back").addEventListener("click", () => {
-      if (!dirty() || window.confirm("放弃未保存的改动并返回菜单？")) run(async () => {
-        const next = page === "template" ? "templates" : "fonts";
-        await reload();
-        showMenu(next);
-      });
+    nameInput.addEventListener("change", () => {
+      if (!nameInput.value.trim()) nameInput.value = editingRecord.name;
+      markChanged();
     });
+    $("desktop-setup-back").addEventListener("click", () => run(() => showMenu("templates")));
+    $("desktop-save").addEventListener("click", () => run(flushSave));
+    $("desktop-export-project").addEventListener("click", () => run(() => exportProject()));
+    $("desktop-editor-back").addEventListener("click", () => run(async () => {
+      const next = page === "template" ? "templates" : "fonts";
+      await flushSave();
+      await reload();
+      showMenu(next);
+    }));
     $("desktop-prev-menu").addEventListener("click", () => run(() => showMenu("templates")));
     $("desktop-next-menu").addEventListener("click", () => run(() => showMenu("fonts")));
     $("desktop-resolve-back").addEventListener("click", () => run(async () => {
@@ -467,14 +594,29 @@
       $("desktop-maximize-icon").setAttribute("d", maximized ?
         "M3.5 5.5h7v7h-7z M5.5 5.5v-2h7v7h-2" : "M3.5 3.5h9v9h-9z");
     });
+    desktop.onSaveBeforeClose(async () => {
+      if (closing) return;
+      closing = true;
+      await activeAction?.catch(() => {});
+      const saved = await run(async () => { await flushSave(); return true; });
+      if (saved || window.confirm("自动保存失败。要放弃未保存的修改并退出吗？")) {
+        allowUnload = true;
+        await desktop.controlWindow("close");
+      }
+      closing = false;
+    });
     window.addEventListener("beforeunload", event => {
-      if (busy || dirty()) event.returnValue = "";
+      if (allowUnload) return;
+      document.activeElement?.blur();
+      if (busy || saving || dirty()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
     });
     document.addEventListener("keydown", event => {
       if (!editing() || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
       event.preventDefault();
-      document.activeElement.blur();
-      run(save);
+      run(flushSave);
     });
     return run(async () => {
       try {
@@ -486,6 +628,10 @@
   }
 
   globalThis.GlyphCutWorkspace = {
-    start, markChanged, editing, createFont: () => run(createFont), exportTemplate: () => run(() => exportProject(true))
+    start, markChanged, editing,
+    createTemplate: dimensions => run(() => createTemplate(dimensions)),
+    createFont: () => run(createFont),
+    refreshSample: () => refreshSample?.(),
+    exportTemplate: () => run(() => exportProject(true))
   };
 })();

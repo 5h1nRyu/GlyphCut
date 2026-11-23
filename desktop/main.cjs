@@ -148,13 +148,9 @@ function createWindow() {
   mainWindow.setMenu(null);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.webContents.on("will-navigate", event => event.preventDefault());
-  mainWindow.webContents.on("will-prevent-unload", event => {
-    const choice = dialog.showMessageBoxSync(mainWindow, {
-      type: "question", title: "字形切片", message: "仍有未保存的修改。",
-      buttons: ["继续编辑", "放弃修改并关闭"], defaultId: 0, cancelId: 0
-    });
-    if (choice === 1) event.preventDefault();
-    else updates.cancelInstall();
+  mainWindow.webContents.on("will-prevent-unload", () => {
+    updates.cancelInstall();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("window:save-before-close");
   });
   for (const name of ["maximize", "unmaximize"]) {
     mainWindow.on(name, () => mainWindow.webContents.send("window:maximized", mainWindow.isMaximized()));
