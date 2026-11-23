@@ -26,6 +26,7 @@
   let editingRecord;
   let savedEditorState;
   let resolvingFont;
+  let editWhenResolved = false;
   let preview;
   let busy = false;
   let activeAction;
@@ -328,6 +329,7 @@
   function showMenu(next) {
     editingRecord = null;
     resolvingFont = null;
+    editWhenResolved = false;
     preview = null;
     setPage(next);
     const isTemplates = next === "templates";
@@ -347,7 +349,7 @@
         }));
       }
       cards.append(card("创建新模板", "", icon("i-plus"), openTemplateSetup, "desktop-card-new"));
-      cards.append(card("导入外部模板", "", icon("i-import"), () => importProject(false), "desktop-card-new desktop-card-import"));
+      cards.append(card("导入外部模板", "", icon("i-import"), () => importProject("template"), "desktop-card-new desktop-card-import"));
     } else {
       for (const font of fonts.values()) {
         const stale = pendingTemplate(font);
@@ -355,11 +357,11 @@
         cards.append(projectCard(font, "font", {
           status: stale ? "模板有更新" : linked?.name ?? `${font.template.name}（内嵌模板）`,
           image: fontArt(font),
-          open: () => stale ? resolve(font) : openFont(font),
+          open: () => openFont(font),
           className: stale ? "pending" : ""
         }));
       }
-      cards.append(card("导入字体或模板", "", icon("i-import"), () => importProject(true), "desktop-card-new desktop-card-import"));
+      cards.append(card("导入外部字体", "", icon("i-import"), () => importProject("font"), "desktop-card-new desktop-card-import"));
     }
     const content = menu.querySelector(".desktop-library-content");
     content.scrollTop = 0;
@@ -389,7 +391,7 @@
     }
   }
 
-  function readImport(value, filename, allowFont) {
+  function readImport(value, filename, kind) {
     const fallback = filename.replace(/(?:\.template|\.glyphs)?\.json$/i, "").trim().slice(0, 96)
       .replace(/[\uD800-\uDBFF]$/, "") || "导入项目";
     let source;
@@ -408,7 +410,8 @@
     } else {
       throw new Error("请选择字形切片导出的 JSON 文件。");
     }
-    if (font && !allowFont) throw new Error("请在字体菜单导入字体文件。");
+    if (font && kind === "template") throw new Error("请在字体菜单导入字体文件。");
+    if (!font && kind === "font") throw new Error("请选择字体项目 JSON。单独的模板可在模板菜单导入。");
 
     const spec = studio.validateSpec(source.spec);
     const count = studio.geometry(spec).faces.length;
@@ -430,7 +433,7 @@
     return { name: font ? fontName || fallback : template.name, template, font };
   }
 
-  async function importProject(allowFont) {
+  async function importProject(kind) {
     const dialog = $("desktop-import-dialog");
     const form = $("desktop-import-form");
     const picker = $("desktop-import-file");
@@ -450,7 +453,7 @@
     filename.textContent = "";
     picker.value = "";
     standalone.checked = false;
-    $("desktop-import-title").textContent = allowFont ? "导入字体或模板" : "导入外部模板";
+    $("desktop-import-title").textContent = kind === "font" ? "导入外部字体" : "导入外部模板";
 
     function refresh() {
       const includesTemplate = Boolean(candidate?.font && standalone.checked);
@@ -484,7 +487,7 @@
         if (file.size > 8_000_000) throw new Error("文件超过 8 MB。");
         const contents = await file.text();
         if (listeners.signal.aborted || ticket !== selection) return;
-        candidate = readImport(JSON.parse(contents.replace(/^\uFEFF/, "")), file.name, allowFont);
+        candidate = readImport(JSON.parse(contents.replace(/^\uFEFF/, "")), file.name, kind);
         name.value = candidate.name;
         templateName.value = candidate.template.name;
         standalone.checked = false;
@@ -601,6 +604,33 @@
     openTemplate(template);
   }
 
+  async function jumpToEditor(record, label, open) {
+    $("desktop-jump-title").textContent = `前往${label}「${record.name}」？`;
+    $("desktop-jump-detail").textContent = unconfirmedFont() ?
+      "确认后将自动保存当前修改，并保留此字体项目。" : "确认后将自动保存当前修改。";
+    if (await showDialog("desktop-jump-dialog") !== "jump") return;
+    await saveManually();
+    open(record);
+  }
+
+  function renderLinkedFonts(template) {
+    const list = $("desktop-linked-font-list");
+    const items = linkedFonts(template.id);
+    $("desktop-linked-font-empty").hidden = items.length > 0;
+    list.replaceChildren(...items.map(font => {
+      const item = element("li");
+      const button = element("button", "button block");
+      button.type = "button";
+      button.title = font.name;
+      button.setAttribute("aria-haspopup", "dialog");
+      button.append(element("span", "", font.name));
+      button.addEventListener("click", () => run(() => jumpToEditor(font, "字体", target => openFont(target, true))));
+      item.append(button);
+      return item;
+    }));
+    list.scrollTop = 0;
+  }
+
   function openTemplate(template) {
     editingRecord = template;
     saveFailed = false;
@@ -609,13 +639,14 @@
     $("desktop-font-title").hidden = true;
     $("desktop-back-label").textContent = "模板菜单";
     studio.open({ draft: template.spec, template: template.spec, disabledRegions: template.disabledRegions });
+    renderLinkedFonts(template);
     savedEditorState = structuredClone(editorState());
     updateSaveStatus();
   }
 
-  function openFont(font) {
+  function openFont(font, editAfterResolution = false) {
     if (pendingTemplate(font)) {
-      resolve(font);
+      resolve(font, editAfterResolution);
       return;
     }
     editingRecord = font;
@@ -623,6 +654,9 @@
     setPage("font");
     $("desktop-font-title").hidden = false;
     $("desktop-back-label").textContent = "字体菜单";
+    const goToTemplate = $("desktop-go-to-template");
+    goToTemplate.disabled = !templates.has(font.template.id);
+    goToTemplate.title = goToTemplate.disabled ? "此字体使用内嵌模板，没有关联的独立模板。" : "";
     studio.open({ ...font, fontName: font.name, draft: font.template.spec, template: font.template.spec,
       disabledRegions: font.template.disabledRegions, mode: "glyph" });
     savedEditorState = structuredClone(editorState());
@@ -736,7 +770,7 @@
   async function simplifyFont() {
     const { template } = editingRecord;
     const saved = await promptProject({
-      title: "简化模板", caption: "独立模板名称", name: suggestedName(template.name, "（简化）"), action: "简化并保存",
+      title: "自动简化模板", caption: "独立模板名称", name: suggestedName(template.name, "（简化）"), action: "简化并保存",
       simplify: { original: templates.has(template.id), linked: linkedFonts(template.id).length - 1 }
     }, async (name, destination) => {
       const simplification = studio.simplifiedTemplate();
@@ -786,8 +820,16 @@
     fill.classList.add("split");
     fill.before(settings);
     const actions = element("section", "desktop-glyph-actions");
-    $("clear-glyph").classList.replace("clear", "danger");
-    actions.append($("simplify-template"), $("clear-glyph"));
+    const goToTemplate = element("button", "button block", "前往模板");
+    goToTemplate.type = "button";
+    goToTemplate.id = "desktop-go-to-template";
+    goToTemplate.setAttribute("aria-haspopup", "dialog");
+    goToTemplate.addEventListener("click", () => run(() => {
+      const template = templates.get(editingRecord.template.id);
+      if (template) return jumpToEditor(template, "模板", openTemplate);
+    }));
+    $("clear-glyph").classList.replace("clear", "cyan");
+    actions.append($("simplify-template"), goToTemplate, $("clear-glyph"));
     fill.after(actions);
 
     const viewport = $("characters");
@@ -828,8 +870,9 @@
     }, { capture: true });
   }
 
-  function resolve(font) {
+  function resolve(font, editAfterResolution) {
     resolvingFont = font;
+    editWhenResolved = editAfterResolution;
     preview = null;
     const current = templates.get(font.template.id);
     setPage("resolve");
@@ -879,7 +922,14 @@
       font = await desktop.adaptFont(resolvingFont.id, preview.template, preview.glyphs);
     }
     fonts.set(font.id, font);
-    showMenu("fonts");
+    if (editWhenResolved) {
+      resolvingFont = null;
+      editWhenResolved = false;
+      preview = null;
+      openFont(font);
+    } else {
+      showMenu("fonts");
+    }
     studio.notify(retain ? "已保留为独立模板。" : "已应用适配。");
   }
 
@@ -1034,7 +1084,7 @@
     initializeExports();
     initializeGlyphControls();
     $("use-template").textContent = "使用此模板创建字体";
-    $("simplify-template").textContent = "简化模板";
+    $("simplify-template").textContent = "自动简化模板";
     $("desktop-setup-fields").append($("dimensions"));
     $("apply-dimensions").textContent = "创建并编辑";
     $("apply-dimensions").classList.add("accent");
@@ -1044,10 +1094,11 @@
     history.className = "desktop-history";
     for (const button of history.children) button.className = "button";
     $("desktop-export-project").before(history);
-    for (const id of ["desktop-delete-dialog", "desktop-retain-font", "desktop-project-dialog"]) {
+    for (const id of ["desktop-delete-dialog", "desktop-retain-font", "desktop-project-dialog", "desktop-jump-dialog"]) {
       $(id).addEventListener("keydown", event => event.stopPropagation());
     }
     $("desktop-template-identity").hidden = false;
+    $("desktop-linked-fonts").hidden = false;
     $("tools").querySelector("[data-tool=exclude]").removeAttribute("title");
     initializeSampleScroll();
     nameInput.addEventListener("input", markChanged);

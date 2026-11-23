@@ -41,6 +41,23 @@
   min-height: 100%;
 }
 .desktop-template-editing #use-template { white-space: nowrap; }
+.desktop-template-editing .workbench #template-preview { height: 100%; }
+.desktop-linked-fonts { display: flex; flex-direction: column; min-height: 0; margin-top: auto; padding-top: 12px; }
+#desktop-linked-font-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  margin: 8px -2px 0;
+  padding: 2px;
+  list-style: none;
+  overflow: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+#desktop-linked-font-list:empty { display: none; }
+#desktop-linked-font-list li { min-width: 0; }
+#desktop-linked-font-list .button { justify-content: flex-start; min-height: 33px; text-align: left; }
+#desktop-linked-font-list .button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .desktop-font-editing { overflow: hidden; }
 .desktop-font-editing .workbench {
   height: calc(100dvh - var(--desktop-title-height) - var(--desktop-editor-height));
@@ -79,6 +96,8 @@
 .desktop-font-editing #point-fill-controls .stack { margin-top: 6px; }
 .desktop-glyph-actions { display: grid; gap: 6px; margin-top: auto; }
 .desktop-glyph-actions #clear-glyph { margin: 0; }
+.desktop-glyph-actions .button.cyan { color: #fff; background: #007a89; border-color: #007a89; }
+.desktop-glyph-actions .button.cyan:hover:not(:disabled) { background: #006571; border-color: #006571; }
 .desktop-font-editing #cycle-point-connection,
 .desktop-glyph-actions .button { min-height: 33px; padding-block: 4px; }
 .desktop-font-editing #characters {
@@ -391,8 +410,8 @@
 .desktop-project-note { color: var(--muted); font-size: .875rem; }
 .desktop-font-scope .desktop-project-note { margin: 0; }
 .desktop-project-error { color: #a02536; font-size: .875rem; }
-:is(.desktop-dialog, .desktop-glyph-actions) .button.danger { color: #fff; background: #a53041; border-color: #a53041; }
-:is(.desktop-dialog, .desktop-glyph-actions) .button.danger:hover:not(:disabled) {
+.desktop-dialog .button.danger { color: #fff; background: #a53041; border-color: #a53041; }
+.desktop-dialog .button.danger:hover:not(:disabled) {
   background: #862332;
   border-color: #862332;
 }
