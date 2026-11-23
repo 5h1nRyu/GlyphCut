@@ -8,6 +8,19 @@ const { join } = require("node:path");
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const templateFormat = "glyph-cut-template";
 const fontFormat = "glyph-cut-font";
+const characterSets = {
+  upper: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  lower: "abcdefghijklmnopqrstuvwxyz",
+  digits: "0123456789"
+};
+const allGroups = Object.keys(characterSets);
+
+function validateGroups(groups = allGroups) {
+  if (!Array.isArray(groups) || !groups.length || Array.from(groups).some(group => !allGroups.includes(group))) {
+    throw new Error("请选择有效的字形范围。");
+  }
+  return allGroups.filter(group => groups.includes(group));
+}
 
 function templateMatches(snapshot, template) {
   return snapshot.id === template?.id && isDeepStrictEqual(snapshot.spec, template.spec) &&
@@ -27,17 +40,20 @@ function templateData(input, id) {
 function fontData(template, project, id) {
   const { name, glyphs, baseline, spacing, sample, character,
     autoSample = sample === "" || sample === "ABC 123" } = project;
+  const characterGroups = validateGroups(project.characterGroups);
+  const characters = characterGroups.map(group => characterSets[group]).join("");
   if (typeof name !== "string" || !name.trim() || name.length > 100 ||
       !glyphs || typeof glyphs !== "object" || Array.isArray(glyphs) ||
-      !Object.entries(glyphs).every(([ch, ids]) => /^[A-Za-z0-9]$/.test(ch) &&
+      !Object.entries(glyphs).every(([ch, ids]) => ch.length === 1 && characters.includes(ch) &&
         Array.isArray(ids) && ids.every(index => Number.isInteger(index) && index >= 0)) ||
       !Number.isFinite(baseline) || baseline < 0 || baseline > 100 ||
       !Number.isFinite(spacing) || spacing < 0 || spacing > 8192 ||
       typeof sample !== "string" || sample.length > 100 || typeof autoSample !== "boolean" ||
-      typeof character !== "string" || !/^[A-Za-z0-9]$/.test(character)) {
+      typeof character !== "string" || character.length !== 1 || !characters.includes(character)) {
     throw new Error("字体数据无效。");
   }
-  return { format: fontFormat, id, name: name.trim(), template, glyphs, baseline, spacing, sample, autoSample, character,
+  return { format: fontFormat, id, name: name.trim(), template, glyphs, baseline, spacing, sample, autoSample,
+    characterGroups, character,
     ...(project.unconfirmed === true ? { unconfirmed: true } : {}) };
 }
 
@@ -161,14 +177,29 @@ function createProjects(root) {
       if (input.id) await requireRecord("templates", input.id);
       return write("templates", templateData(input, input.id ?? randomUUID()));
     }),
+    copyProject: (kind, id) => queue(async () => {
+      if (kind !== "template" && kind !== "font") throw new Error("项目类型无效。");
+      const collection = kind === "template" ? "templates" : "fonts";
+      const original = await requireRecord(collection, id);
+      const names = new Set((await list(collection, [])).map(record => record.name));
+      const copyName = suffix => original.name.slice(0, 100 - suffix.length).replace(/[\uD800-\uDBFF]$/, "") + suffix;
+      let name = copyName("（副本）");
+      for (let number = 2; names.has(name); number++) name = copyName(`（副本 ${number}）`);
+      const fields = { ...original, name, unconfirmed: false };
+      const nextId = randomUUID();
+      const copy = kind === "template" ? templateData(fields, nextId) : fontData(original.template, fields, nextId);
+      return write(collection, copy);
+    }),
     deleteTemplate: (id, linked) => queue(() => linked === true ?
       deleteLinkedProjects(id) : rm(path("templates", id), { force: true })),
     deleteFont: id => queue(() => rm(path("fonts", id), { force: true })),
-    createFont: templateId => queue(async () => {
+    createFont: (templateId, options = {}) => queue(async () => {
       const template = await requireRecord("templates", templateId);
+      const characterGroups = validateGroups(options.characterGroups);
       const font = fontData(template, {
-        name: `${template.name.slice(0, 96)} 字体`,
-        glyphs: {}, baseline: 86, spacing: 18, sample: "", character: "A", unconfirmed: true
+        name: options.name ?? `${template.name.slice(0, 96)} 字体`,
+        glyphs: {}, baseline: 86, spacing: 18, sample: "",
+        characterGroups, character: characterSets[characterGroups[0]][0], unconfirmed: true
       }, randomUUID());
       return write("fonts", font);
     }),
@@ -177,7 +208,7 @@ function createProjects(root) {
       const current = await read("templates", font.template.id);
       if (current && !templateMatches(font.template, current)) throw new Error("关联模板已更改，请先处理模板变更。");
       const template = current ?? font.template;
-      const fields = { ...changes, unconfirmed: font.unconfirmed };
+      const fields = { ...changes, characterGroups: font.characterGroups, unconfirmed: font.unconfirmed };
       if (simplified) return fork(font, { ...simplified, name: `${template.name}（简化）` }, fields);
       return { font: await write("fonts", fontData(template, fields, id)) };
     }),

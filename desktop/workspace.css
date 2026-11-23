@@ -6,6 +6,7 @@
 }
 .desktop-app .top,
 .desktop-app .baseline-setting,
+.desktop-app #glyph-controls .help:not(#point-fill-status),
 .desktop-app #canvas-settings,
 .desktop-app #generate,
 .desktop-app:not(.desktop-editing) .workbench { display: none; }
@@ -80,7 +81,7 @@
 .desktop-window-controls #desktop-close:hover { background: #c42b1c; }
 .desktop-window-controls svg { width: 14px; height: 14px; stroke-width: 1.15; }
 
-.desktop-template-setup {
+.desktop-template-setup, .desktop-font-setup {
   height: calc(100dvh - var(--desktop-title-height));
   overflow: auto;
   padding: 24px 16px;
@@ -93,7 +94,7 @@
   margin-inline: auto;
 }
 #desktop-setup-back { justify-self: start; }
-.desktop-setup-content h1 { margin: 18px 0 12px; font-size: 1.5rem; }
+.desktop-setup-content h1, .desktop-font-setup-content h1 { margin: 18px 0 12px; font-size: 1.5rem; }
 .desktop-setup-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
@@ -118,7 +119,6 @@
   font-weight: 620;
   color: #434f61;
 }
-.desktop-setup-preview > p { margin-top: 4px; color: var(--muted); overflow-wrap: anywhere; }
 .desktop-setup-stage {
   position: relative;
   display: grid;
@@ -143,6 +143,24 @@
 @media (max-width: 480px) {
   .desktop-setup-columns { grid-template-columns: minmax(0, 1fr); }
 }
+
+.desktop-font-setup-content { width: min(100%, 460px); margin-inline: auto; }
+#desktop-font-setup-form { padding: 18px; border: 1px solid var(--edge); border-radius: 10px; background: #fff; }
+.desktop-font-scope { display: grid; gap: 7px; min-width: 0; margin: 18px 0; padding: 0; border: 0; }
+.desktop-font-scope legend { padding: 0 0 7px; font-size: .875rem; font-weight: 700; }
+.desktop-font-scope label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid #e2e8ee;
+  border-radius: 6px;
+  background: #f6f8fb;
+  font-size: .875rem;
+  cursor: pointer;
+}
+.desktop-font-scope input { margin: 0; accent-color: #52800b; }
+.desktop-font-scope span { margin-left: auto; font-family: var(--mono); color: var(--muted); }
 
 .desktop-library, .desktop-resolve {
   position: relative;
@@ -197,8 +215,11 @@
 .desktop-art .template-line { stroke: #5e7088; stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 .desktop-art .template-disabled { fill: #c9d1df; }
 .desktop-card-caption { display: grid; gap: 3px; width: 100%; padding: 13px 14px; }
-.desktop-card-caption strong { line-height: 1.3; overflow-wrap: anywhere; }
-.desktop-card-caption small { color: #566175; overflow-wrap: anywhere; }
+.desktop-card-caption strong { line-height: 1.3; }
+.desktop-card-caption small { color: #566175; }
+.desktop-card-line { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desktop-card-line.scrolling { text-overflow: clip; }
+.desktop-card-line.scrolling > span { display: inline-block; }
 .desktop-card.pending { border-color: #d36772; background: #fff3f4; color: #812735; }
 .desktop-card.pending:hover { border-color: #a12635; }
 .desktop-card.pending .desktop-card-visual { border-color: #f0cdd2; background: #fbe3e6; color: #9c3443; }
@@ -265,14 +286,22 @@
 }
 
 .desktop-card-slot { position: relative; display: grid; min-width: 0; }
-.desktop-card-slot .desktop-card-caption { padding-right: 46px; }
-.desktop-delete {
+.desktop-card-slot .desktop-card-caption {
+  grid-template-rows: auto minmax(30px, auto);
+  padding-bottom: 8px;
+}
+.desktop-card-slot .desktop-card-caption small { align-self: center; margin-right: 68px; }
+.desktop-card-actions {
   position: absolute;
   right: 8px;
   bottom: 8px;
+  display: flex;
+  gap: 4px;
+}
+.desktop-card-action {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   place-items: center;
   padding: 0;
   border: 0;
@@ -280,6 +309,7 @@
   color: #59667a;
   background: transparent;
 }
+.desktop-copy:hover, .desktop-copy:focus-visible { color: #25466b; background: #e1edfa; }
 .desktop-delete:hover, .desktop-delete:focus-visible { color: #a02536; background: #fbe3e6; }
 .desktop-window-controls .desktop-update-button { width: auto; padding-inline: 12px; font-size: .8rem; }
 .desktop-window-controls .desktop-update-button.available { color: var(--accent); }

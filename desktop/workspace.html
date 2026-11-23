@@ -1,5 +1,6 @@
 <svg class="icons" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <symbol id="desktop-trash-icon" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"/></symbol>
+  <symbol id="desktop-copy-icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 6V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h1"/></symbol>
 </svg>
 <header class="desktop-titlebar">
   <div class="desktop-brand"><span class="mark" aria-hidden="true"><b></b><b></b><b></b><b></b></span>字形切片</div>
@@ -35,7 +36,6 @@
       </div>
       <section class="desktop-setup-preview" aria-labelledby="desktop-setup-preview-title">
         <h2 id="desktop-setup-preview-title">模板预览</h2>
-        <p id="desktop-setup-preview-name"></p>
         <div class="desktop-setup-stage">
           <svg id="desktop-setup-preview-canvas" aria-hidden="true">
             <rect id="desktop-setup-preview-paper" vector-effect="non-scaling-stroke"/>
@@ -45,6 +45,24 @@
         </div>
       </section>
     </div>
+  </div>
+</main>
+<main id="desktop-font-setup" class="desktop-font-setup" aria-labelledby="desktop-font-setup-title" hidden>
+  <div class="desktop-font-setup-content">
+    <button id="desktop-font-setup-back" class="button" type="button">返回模板编辑</button>
+    <h1 id="desktop-font-setup-title">创建字体</h1>
+    <form id="desktop-font-setup-form">
+      <label class="desktop-template-label">字体名称
+        <input id="desktop-font-setup-name" maxlength="100" spellcheck="false" required>
+      </label>
+      <fieldset class="desktop-font-scope">
+        <legend>字形范围</legend>
+        <label><input type="checkbox" name="character-group" value="upper" checked>大写字母 <span>A–Z</span></label>
+        <label><input type="checkbox" name="character-group" value="lower" checked>小写字母 <span>a–z</span></label>
+        <label><input type="checkbox" name="character-group" value="digits" checked>数字 <span>0–9</span></label>
+      </fieldset>
+      <button id="desktop-font-setup-submit" class="button accent block" type="submit">创建并编辑</button>
+    </form>
   </div>
 </main>
 <div id="desktop-editor-bar" class="desktop-editor-bar" hidden>

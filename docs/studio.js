@@ -10,6 +10,7 @@
     lower: "abcdefghijklmnopqrstuvwxyz",
     digits: "0123456789"
   };
+  const groupNames = Object.keys(groups);
   const alphabet = Object.values(groups).join("");
   const colors = ["#d9ebfd", "#e6f2dc", "#f8e3d1", "#ebe3fa", "#f7dfe7", "#d8eee8", "#f8efca", "#e0e5fb"];
   const axes = ["width", "height", "stepX", "stepY"];
@@ -122,6 +123,14 @@
   function readProject(value) {
     if (!value || value.format !== "glyph-cut-v1") throw new Error("请选择字形切片导出的 JSON 文件。");
     const restored = newProject();
+    let characters = alphabet;
+    if (workspace) {
+      const selected = Array.isArray(value.characterGroups)
+        ? groupNames.filter(group => value.characterGroups.includes(group)) : groupNames;
+      restored.characterGroups = selected.length ? selected : groupNames;
+      characters = restored.characterGroups.map(group => groups[group]).join("");
+      restored.character = characters[0];
+    }
     restored.draft = validateSpec(value.draft);
     if (value.template) {
       restored.template = validateSpec(value.template);
@@ -129,7 +138,7 @@
       const isRegionId = id => Number.isInteger(id) && id >= 0 && id < available;
       const disabled = new Set(Array.isArray(value.disabledRegions) ? value.disabledRegions.filter(isRegionId) : []);
       restored.disabledRegions = [...disabled].sort((a, b) => a - b);
-      for (const ch of alphabet) {
+      for (const ch of characters) {
         const ids = value.glyphs?.[ch];
         if (!Array.isArray(ids)) continue;
         const valid = ids.filter(id => isRegionId(id) && !disabled.has(id));
@@ -139,7 +148,7 @@
     if (typeof value.fontName === "string") restored.fontName = value.fontName.slice(0, 100);
     if (Number.isFinite(value.baseline) && value.baseline >= 0 && value.baseline <= 100) restored.baseline = value.baseline;
     if (Number.isFinite(value.spacing) && value.spacing >= 0 && value.spacing <= 8192) restored.spacing = value.spacing;
-    if (typeof value.character === "string" && value.character.length === 1 && alphabet.includes(value.character)) {
+    if (typeof value.character === "string" && value.character.length === 1 && characters.includes(value.character)) {
       restored.character = value.character;
     }
     if (typeof value.sample === "string") restored.sample = value.sample.slice(0, 100);
@@ -197,7 +206,7 @@
   }
 
   function groupFor(ch) {
-    return Object.keys(groups).find(key => groups[key].includes(ch));
+    return groupNames.find(key => groups[key].includes(ch));
   }
 
   function travel(source, destination) {
@@ -625,8 +634,13 @@
         button.classList.toggle("selected", active);
         button.setAttribute("aria-pressed", active);
       });
-      $("glyph-count").textContent = `${size} / ${alphabet.length}`;
-      $("character-tabs").querySelectorAll("button").forEach(button => {
+      const characterGroups = project.characterGroups ?? groupNames;
+      const capacity = characterGroups.reduce((total, key) => total + groups[key].length, 0);
+      $("glyph-count").textContent = `${size} / ${capacity}`;
+      const tabs = $("character-tabs");
+      if (workspace) tabs.style.gridTemplateColumns = `repeat(${characterGroups.length}, minmax(0, 1fr))`;
+      tabs.querySelectorAll("button").forEach(button => {
+        button.hidden = !characterGroups.includes(button.dataset.group);
         const active = button.dataset.group === group;
         button.classList.toggle("selected", active);
         button.setAttribute("aria-pressed", active);
@@ -956,7 +970,7 @@
     if (button) activateTool(button.dataset.tool);
   });
   $("generate").addEventListener("click", () => generate());
-  $("use-template").addEventListener("click", () => workspace ? workspace.createFont() : generate(true));
+  $("use-template").addEventListener("click", () => workspace ? workspace.openFontSetup() : generate(true));
   $("mode-glyph").addEventListener("click", () => switchMode("glyph"));
   $("mode-template").addEventListener("click", () => switchMode("template"));
   $("undo").addEventListener("click", () => travel(previous, future));
@@ -1060,7 +1074,7 @@
 
   $("character-tabs").addEventListener("click", event => {
     const tab = event.target.closest("[data-group]");
-    if (!tab) return;
+    if (!tab || tab.hidden) return;
     group = tab.dataset.group;
     if (!groups[group].includes(project.character)) project.character = groups[group][0];
     resetOutline();

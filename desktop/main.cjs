@@ -58,7 +58,7 @@ function registerFiles() {
   });
 
   projects = createProjects(join(app.getPath("userData"), "workspace"));
-  for (const method of ["load", "saveTemplate", "createFont", "saveFont", "confirmFont", "adaptFont", "keepTemplate"]) {
+  for (const method of ["load", "saveTemplate", "copyProject", "createFont", "saveFont", "confirmFont", "adaptFont", "keepTemplate"]) {
     ipcMain.handle(`project:${method}`, (event, ...args) => {
       trustedWindow(event);
       return projects[method](...args);

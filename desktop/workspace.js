@@ -7,6 +7,9 @@
   const menu = $("desktop-menu");
   const editorBar = $("desktop-editor-bar");
   const templateSetup = $("desktop-template-setup");
+  const fontSetup = $("desktop-font-setup");
+  const fontSetupForm = $("desktop-font-setup-form");
+  const fontSetupName = $("desktop-font-setup-name");
   const resolvePanel = $("desktop-resolve");
   const nameInput = $("desktop-template-name");
   const setupName = $("desktop-setup-name");
@@ -38,7 +41,7 @@
   const fontFields = () => {
     const p = project();
     return { name: p.fontName.trim(), glyphs: p.glyphs, baseline: p.baseline, spacing: p.spacing,
-      sample: p.sample, autoSample: p.autoSample, character: p.character };
+      sample: p.sample, autoSample: p.autoSample, characterGroups: p.characterGroups, character: p.character };
   };
   const sampleText = font => font.autoSample ?
     [...alphabet].filter(ch => font.glyphs[ch]?.length).slice(0, 3).join("") : font.sample;
@@ -145,9 +148,34 @@
     const visual = element("span", "desktop-card-visual");
     visual.append(image);
     const caption = element("span", "desktop-card-caption");
-    caption.append(element("strong", "", title));
-    if (subtitle) caption.append(element("small", "", subtitle));
+    const titleLine = element("strong", "desktop-card-line");
+    titleLine.append(element("span", "", title));
+    caption.append(titleLine);
+    if (subtitle) {
+      const subtitleLine = element("small", "desktop-card-line");
+      subtitleLine.append(element("span", "", subtitle));
+      caption.append(subtitleLine);
+    }
     button.append(visual, caption);
+    button.addEventListener("pointerenter", () => {
+      for (const line of caption.children) {
+        const distance = line.scrollWidth - line.clientWidth;
+        if (distance <= 1) continue;
+        if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          line.title = line.textContent;
+          continue;
+        }
+        line.classList.add("scrolling");
+        line.firstElementChild.animate({ transform: ["translateX(0)", `translateX(-${distance}px)`] },
+          { delay: 300, duration: Math.min(8000, Math.max(850, distance * 18)), fill: "forwards" });
+      }
+    });
+    button.addEventListener("pointerleave", () => {
+      for (const line of caption.children) {
+        line.firstElementChild.getAnimations().forEach(animation => animation.cancel());
+        line.classList.remove("scrolling");
+      }
+    });
     button.addEventListener("click", () => run(handler));
     return button;
   }
@@ -155,10 +183,26 @@
   function projectCard(record, kind, options) {
     const { status, image, open, className } = options;
     const wrapper = element("div", "desktop-card-slot");
-    const remove = element("button", "desktop-delete");
-    remove.type = "button";
+    wrapper.dataset.projectId = record.id;
     const isTemplate = kind === "template";
-    const label = `删除${isTemplate ? "模板" : "字体"}「${record.name}」`;
+    const kindLabel = isTemplate ? "模板" : "字体";
+    const copy = element("button", "desktop-card-action desktop-copy");
+    copy.type = "button";
+    copy.title = `拷贝${kindLabel}「${record.name}」`;
+    copy.setAttribute("aria-label", copy.title);
+    copy.append(icon("desktop-copy-icon"));
+    copy.addEventListener("click", () => run(async () => {
+      const duplicate = await desktop.copyProject(kind, record.id);
+      await reload();
+      showMenu(page);
+      studio.notify(`已创建${kindLabel}副本。`);
+      requestAnimationFrame(() => {
+        $("desktop-cards").querySelector(`[data-project-id="${duplicate.id}"] .desktop-card`)?.focus();
+      });
+    }));
+    const remove = element("button", "desktop-card-action desktop-delete");
+    remove.type = "button";
+    const label = `删除${kindLabel}「${record.name}」`;
     remove.title = label;
     remove.setAttribute("aria-label", label);
     remove.append(icon("desktop-trash-icon"));
@@ -178,7 +222,9 @@
         ($("desktop-cards").querySelector(".desktop-card") ?? $("desktop-menu-title")).focus({ preventScroll: true });
       });
     }));
-    wrapper.append(card(record.name, status, image, open, className), remove);
+    const actions = element("div", "desktop-card-actions");
+    actions.append(copy, remove);
+    wrapper.append(card(record.name, status, image, open, className), actions);
     return wrapper;
   }
 
@@ -196,6 +242,7 @@
     menu.hidden = next !== "templates" && next !== "fonts";
     editorBar.hidden = !editing();
     templateSetup.hidden = next !== "setup";
+    fontSetup.hidden = next !== "font-setup";
     resolvePanel.hidden = next !== "resolve";
     const exportButton = $("desktop-export-project");
     if (next === "font") exportButton.setAttribute("aria-haspopup", "dialog");
@@ -265,7 +312,6 @@
 
   function renderSetupPreview() {
     if (page !== "setup") return;
-    $("desktop-setup-preview-name").textContent = setupName.value.trim();
     const fields = dimensions.map($);
     const valid = fields.every(field => field.validity.valid);
     setupCanvas.toggleAttribute("hidden", !valid);
@@ -425,9 +471,19 @@
     return true;
   }
 
-  async function createFont() {
+  async function openFontSetup() {
     await flushSave();
-    const font = await desktop.createFont(editingRecord.id);
+    fontSetupName.value = `${editingRecord.name.slice(0, 96)} 字体`;
+    fontSetupForm.querySelectorAll("[name=character-group]").forEach(input => { input.checked = true; });
+    $("desktop-font-setup-submit").disabled = false;
+    setPage("font-setup");
+  }
+
+  async function createFont() {
+    const name = fontSetupName.value.trim();
+    if (!name) throw new Error("请输入字体名称。");
+    const characterGroups = new FormData(fontSetupForm).getAll("character-group");
+    const font = await desktop.createFont(editingRecord.id, { name, characterGroups });
     fonts.set(font.id, font);
     openFont(font);
   }
@@ -515,7 +571,7 @@
   async function run(action) {
     if (busy) return;
     busy = true;
-    const content = [menu, templateSetup, editorBar, resolvePanel, document.querySelector(".workbench")];
+    const content = [menu, templateSetup, fontSetup, editorBar, resolvePanel, document.querySelector(".workbench")];
     content.forEach(node => { node.inert = true; });
     const previousPage = page;
     activeAction = Promise.resolve().then(action);
@@ -531,6 +587,10 @@
         if (!menu.hidden) $("desktop-menu-title").focus({ preventScroll: true });
         else if (!resolvePanel.hidden) $("desktop-resolve-title").focus({ preventScroll: true });
         else if (page === "setup") $("desktop-setup-name").focus();
+        else if (page === "font-setup") {
+          fontSetupName.focus();
+          fontSetupName.select();
+        }
         else if (page === "template") nameInput.focus();
         else if (page === "font") $("font-name").focus();
       }
@@ -662,7 +722,7 @@
     $("desktop-setup-fields").append($("dimensions"));
     $("apply-dimensions").textContent = "创建并编辑";
     $("apply-dimensions").classList.add("accent");
-    $("desktop-setup-fields").addEventListener("input", renderSetupPreview);
+    $("dimensions").addEventListener("input", renderSetupPreview);
     new ResizeObserver(renderSetupPreview).observe(setupCanvas.parentElement);
     const history = $("undo").parentElement;
     history.className = "desktop-history";
@@ -680,6 +740,14 @@
       markChanged();
     });
     $("desktop-setup-back").addEventListener("click", () => run(() => showMenu("templates")));
+    $("desktop-font-setup-back").addEventListener("click", () => run(() => setPage("template")));
+    fontSetupForm.addEventListener("change", () => {
+      $("desktop-font-setup-submit").disabled = !fontSetupForm.querySelector("[name=character-group]:checked");
+    });
+    fontSetupForm.addEventListener("submit", event => {
+      event.preventDefault();
+      run(createFont);
+    });
     $("desktop-save").addEventListener("click", () => run(saveManually));
     $("desktop-editor-back").addEventListener("click", () => run(async () => {
       const next = page === "template" ? "templates" : "fonts";
@@ -748,7 +816,7 @@
   globalThis.GlyphCutWorkspace = {
     start, markChanged, editing, sampleText,
     createTemplate: dimensions => run(() => createTemplate(dimensions)),
-    createFont: () => run(createFont),
+    openFontSetup: () => run(openFontSetup),
     refreshSample: () => refreshSample?.(),
     exportTemplate: () => run(() => exportProject(true))
   };

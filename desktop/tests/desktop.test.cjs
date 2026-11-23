@@ -106,6 +106,56 @@ test("new fonts and the legacy default use automatic samples while custom text s
   assert.equal(custom.sample, "ABC 123");
 });
 
+test("font creation and later edits enforce the saved character groups", async t => {
+  const root = await temporary(t);
+  const projects = createProjects(root);
+  const spec = { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] };
+  const template = await projects.saveTemplate({ name: "Grid", spec, disabledRegions: [] });
+  await assert.rejects(projects.createFont(template.id, { characterGroups: [] }), /字形范围/);
+  await assert.rejects(projects.createFont(template.id, { characterGroups: ["invalid"] }), /字形范围/);
+  const font = await projects.createFont(template.id, { name: "Digits", characterGroups: ["digits"] });
+  assert.equal(font.name, "Digits");
+  assert.equal(font.character, "0");
+  await assert.rejects(projects.saveFont(font.id, { ...font, glyphs: { A: [0] }, characterGroups: ["upper"] }), /字体数据/);
+  await projects.saveFont(font.id, { ...font, glyphs: { "9": [0] }, character: "9" });
+  const [saved] = (await createProjects(root).load()).fonts;
+  assert.deepEqual(saved.characterGroups, ["digits"]);
+  assert.equal(saved.character, "9");
+
+  const legacy = await projects.createFont(template.id);
+  delete legacy.characterGroups;
+  await writeFile(join(root, "fonts", legacy.id + ".json"), JSON.stringify(legacy));
+  assert.deepEqual((await projects.load()).fonts.find(record => record.id === legacy.id).characterGroups,
+    ["upper", "lower", "digits"]);
+});
+
+test("copying a project creates an independent record and preserves the font's scope and template", async t => {
+  const projects = createProjects(await temporary(t));
+  const spec = { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] };
+  const template = await projects.saveTemplate({ name: "Grid", spec, disabledRegions: [] });
+  const templateCopy = await projects.copyProject("template", template.id);
+  assert.notEqual(templateCopy.id, template.id);
+  assert.equal(templateCopy.name, "Grid（副本）");
+  assert.deepEqual(templateCopy.spec, spec);
+
+  const font = await projects.createFont(template.id, { name: "Digits", characterGroups: ["digits"] });
+  await projects.saveFont(font.id, { ...font, glyphs: { "0": [0] }, spacing: 30 });
+  const [copy, second] = await Promise.all([
+    projects.copyProject("font", font.id),
+    projects.copyProject("font", font.id)
+  ]);
+  assert.notEqual(copy.id, font.id);
+  assert.equal(copy.name, "Digits（副本）");
+  assert.equal(second.name, "Digits（副本 2）");
+  assert.deepEqual(copy.template, template);
+  assert.deepEqual(copy.characterGroups, ["digits"]);
+  assert.deepEqual(copy.glyphs, { "0": [0] });
+  assert.equal(copy.spacing, 30);
+  assert.equal(copy.unconfirmed, undefined);
+  await projects.deleteFont(font.id);
+  assert.equal((await projects.load()).fonts.length, 2);
+});
+
 test("only a newer stable release with a verifiable Windows archive is eligible", () => {
   const asset = { name: "GlyphCut-Windows-x64.zip", state: "uploaded", size: 100, digest: "sha256:" + "a".repeat(64) };
   const release = { tag_name: "v1.10.0", assets: [asset] };
