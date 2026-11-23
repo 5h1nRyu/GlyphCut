@@ -127,8 +127,8 @@ function registerFiles() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     title: "字形切片",
-    width: 1320,
-    height: 895,
+    width: 990,
+    height: 671,
     minWidth: 520,
     minHeight: 480,
     frame: false,

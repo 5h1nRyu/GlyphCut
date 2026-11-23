@@ -5,7 +5,9 @@
   --desktop-editor-height: 62px;
 }
 .desktop-app .top,
+.desktop-app .baseline-setting,
 .desktop-app:not(.desktop-editing) .workbench { display: none; }
+.desktop-app .spacing-setting { grid-column: 1 / -1; }
 .desktop-app .workbench {
   min-height: calc(100vh - var(--desktop-title-height) - var(--desktop-editor-height));
 }

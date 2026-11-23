@@ -486,7 +486,7 @@
       ${marker(curve.c, "c", true)}` : "";
     const handles = selectedEdge ? `${control}${marker(selectedEdge.a, "a")}${marker(selectedEdge.b, "b")}` : "";
     const baseline = height * project.baseline / 100;
-    const ruler = glyphMode && grid ? `<path pointer-events="none" d="M0 ${baseline}H${width}" stroke="#8978a6" stroke-dasharray="5 4" stroke-width=".9" vector-effect="non-scaling-stroke"><title>基线</title></path>` : "";
+    const ruler = !workspace && glyphMode && grid ? `<path pointer-events="none" d="M0 ${baseline}H${width}" stroke="#8978a6" stroke-dasharray="5 4" stroke-width=".9" vector-effect="non-scaling-stroke"><title>基线</title></path>` : "";
     const hatch = 7 / stageScale;
     board.innerHTML = `<defs>
       <pattern id="excluded-region-hatch" width="${hatch}" height="${hatch}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -601,7 +601,7 @@
       updateHelp();
     } else {
       $("font-name").value = project.fontName;
-      $("baseline").value = project.baseline;
+      if (!workspace) $("baseline").value = project.baseline;
       $("spacing").value = project.spacing;
       $("sample-text").value = project.sample;
       const size = Object.keys(project.glyphs).length;
@@ -1061,7 +1061,7 @@
     if (name !== project.fontName) change(() => { project.fontName = name; });
     else event.target.value = name;
   });
-  for (const id of ["spacing", "baseline"]) {
+  for (const id of workspace ? ["spacing"] : ["spacing", "baseline"]) {
     $(id).addEventListener("change", event => {
       const input = event.target;
       if (!input.value.length || !input.checkValidity()) {
@@ -1198,6 +1198,7 @@ ${paths}
       const { width, height } = project.template;
       const geometry = getGeometry(project.template);
       const outlines = Object.keys(project.glyphs).sort().map(ch => [ch, glyphOutline(geometry, ch)]);
+      // Preserve the saved font metrics when exporting older desktop projects.
       const font = TTF.build({ name: project.fontName, width, height, spacing: project.spacing,
         baseline: height * project.baseline / 100, outlines });
       download(font, "font/ttf", `${safeName(project.fontName)}.ttf`);
