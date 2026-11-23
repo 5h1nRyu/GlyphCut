@@ -410,7 +410,7 @@
       notes.textContent = state.notes ?? "";
       action.hidden = !actions[phase];
       action.textContent = actions[phase] ?? "";
-      browser.hidden = phase !== "checkFailed" && !(state.message && phase === "available");
+      browser.hidden = phase !== "checkFailed" && !state.message;
     }
 
     const report = () => studio.notify("无法处理更新，请稍后重试。");

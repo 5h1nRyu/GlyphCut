@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $helper = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../portable-update.ps1') -Raw -Encoding UTF8
-$temp = Join-Path ([IO.Path]::GetTempPath()) ("GlyphCut [test] " + [char]0x6D4B + " " + [Guid]::NewGuid())
+$temp = Join-Path ([IO.Path]::GetTempPath()) ('GlyphCut test ' + [Guid]::NewGuid())
 [IO.Directory]::CreateDirectory($temp) | Out-Null
 $exe = Join-Path $temp 'Probe.exe'
 Add-Type -OutputAssembly $exe -OutputType ConsoleApplication -TypeDefinition @'
@@ -51,9 +51,10 @@ function Invoke-Updater($Mode, $Install, $Work, $Version, $Digest, $Expect) {
 
 try {
     foreach ($test in @('success', 'rollback', 'startup')) {
-        $install = Join-Path $temp "$test/program"
+        $testRoot = Join-Path $temp ("$test [program] " + [char]0x6D4B)
+        $install = Join-Path $testRoot 'program'
         $work = Join-Path $install '.glyphcut-update-ABC123'
-        $source = Join-Path $temp "$test/source/GlyphCut-Windows-x64"
+        $source = Join-Path $testRoot 'source/GlyphCut-Windows-x64'
         New-Package $install '1.1.0' 'old-only.dll'
         New-Package $source '1.2.0' 'new-only.dll'
         if ($test -eq 'startup') {
