@@ -14,6 +14,14 @@ const characterSets = {
   digits: "0123456789"
 };
 const allGroups = Object.keys(characterSets);
+const nameKey = name => name.trim().normalize("NFC").toLowerCase();
+
+function projectName(name) {
+  if (typeof name !== "string" || !name.trim() || name.trim().length > 100) {
+    throw new Error("请输入 1–100 个字符的项目名称。");
+  }
+  return name.trim();
+}
 
 function validateGroups(groups = allGroups) {
   if (!Array.isArray(groups) || !groups.length || Array.from(groups).some(group => !allGroups.includes(group))) {
@@ -123,6 +131,25 @@ function createProjects(root) {
     return record;
   }
 
+  async function projectNames() {
+    const [templates, fonts] = await Promise.all([list("templates", []), list("fonts", [])]);
+    return new Set([...templates, ...fonts].map(record => nameKey(record.name)));
+  }
+
+  async function requireUniqueName(name, previous) {
+    const key = nameKey(name);
+    if (previous && nameKey(previous) === key) return;
+    if ((await projectNames()).has(key)) throw new Error("已有同名的模板或字体，请换一个名称。");
+  }
+
+  async function suggestedName(base, decoration = "") {
+    const names = await projectNames();
+    const withSuffix = suffix => base.slice(0, 100 - suffix.length).replace(/[\uD800-\uDBFF]$/, "") + suffix;
+    let name = withSuffix(decoration);
+    for (let n = 2; names.has(nameKey(name)); n++) name = withSuffix(`${decoration} ${n}`);
+    return name;
+  }
+
   async function deleteLinkedProjects(id) {
     await requireRecord("templates", id);
     const linked = (await list("fonts", [])).filter(font => font.template.id === id);
@@ -148,18 +175,18 @@ function createProjects(root) {
     await rm(staging, { recursive: true, force: true }).catch(() => {});
   }
 
-  async function fork(font, input, changes = font) {
-    const existing = await list("templates", []);
-    const base = input.name.slice(0, 84);
-    let name = base;
-    for (let i = 2; existing.some(template => template.name === name); i++) name = `${base} ${i}`;
-    const template = templateData({ ...input, name }, randomUUID());
+  async function saveTemplateAndFont(font, template, changes, previousTemplate) {
     const next = fontData(template, changes, font.id);
     await write("templates", template);
     try {
       await write("fonts", next);
     } catch (error) {
-      await rm(path("templates", template.id), { force: true }).catch(() => {});
+      try {
+        if (previousTemplate) await write("templates", previousTemplate);
+        else await rm(path("templates", template.id), { force: true });
+      } catch (rollbackError) {
+        throw new Error("保存字体失败，且无法回退模板。请重新打开项目。", { cause: rollbackError });
+      }
       throw error;
     }
     return { template, font: next };
@@ -174,18 +201,17 @@ function createProjects(root) {
       return { templates, fonts, warnings };
     },
     saveTemplate: input => queue(async () => {
-      if (input.id) await requireRecord("templates", input.id);
-      return write("templates", templateData(input, input.id ?? randomUUID()));
+      const previous = input.id ? await requireRecord("templates", input.id) : null;
+      const template = templateData(input, input.id ?? randomUUID());
+      await requireUniqueName(template.name, previous?.name);
+      return write("templates", template);
     }),
-    copyProject: (kind, id) => queue(async () => {
+    copyProject: (kind, id, name) => queue(async () => {
       if (kind !== "template" && kind !== "font") throw new Error("项目类型无效。");
       const collection = kind === "template" ? "templates" : "fonts";
       const original = await requireRecord(collection, id);
-      const names = new Set((await list(collection, [])).map(record => record.name));
-      const copyName = suffix => original.name.slice(0, 100 - suffix.length).replace(/[\uD800-\uDBFF]$/, "") + suffix;
-      let name = copyName("（副本）");
-      for (let number = 2; names.has(name); number++) name = copyName(`（副本 ${number}）`);
-      const fields = { ...original, name, unconfirmed: false };
+      const fields = { ...original, name: projectName(name), unconfirmed: false };
+      await requireUniqueName(fields.name);
       const nextId = randomUUID();
       const copy = kind === "template" ? templateData(fields, nextId) : fontData(original.template, fields, nextId);
       return write(collection, copy);
@@ -197,20 +223,39 @@ function createProjects(root) {
       const template = await requireRecord("templates", templateId);
       const characterGroups = validateGroups(options.characterGroups);
       const font = fontData(template, {
-        name: options.name ?? `${template.name.slice(0, 96)} 字体`,
+        name: options.name === undefined ? await suggestedName(template.name, " 字体") : projectName(options.name),
         glyphs: {}, baseline: 86, spacing: 18, sample: "",
         characterGroups, character: characterSets[characterGroups[0]][0], unconfirmed: true
       }, randomUUID());
+      await requireUniqueName(font.name);
       return write("fonts", font);
     }),
-    saveFont: (id, changes, simplified) => queue(async () => {
+    saveFont: (id, changes) => queue(async () => {
       const font = await requireRecord("fonts", id);
       const current = await read("templates", font.template.id);
       if (current && !templateMatches(font.template, current)) throw new Error("关联模板已更改，请先处理模板变更。");
       const template = current ?? font.template;
       const fields = { ...changes, characterGroups: font.characterGroups, unconfirmed: font.unconfirmed };
-      if (simplified) return fork(font, { ...simplified, name: `${template.name}（简化）` }, fields);
-      return { font: await write("fonts", fontData(template, fields, id)) };
+      const next = fontData(template, fields, id);
+      await requireUniqueName(next.name, font.name);
+      return { font: await write("fonts", next) };
+    }),
+    simplifyFont: (id, input) => queue(async () => {
+      const font = await requireRecord("fonts", id);
+      const current = await read("templates", font.template.id);
+      if (current && !templateMatches(font.template, current)) throw new Error("关联模板已更改，请先处理模板变更。");
+      let template;
+      if (input.destination === "original") {
+        if (!current) throw new Error("原模板已删除，请保存为独立模板。");
+        template = templateData({ ...input, name: current.name }, current.id);
+      } else if (input.destination === "independent") {
+        template = templateData({ ...input, name: projectName(input.name) }, randomUUID());
+        await requireUniqueName(template.name);
+      } else {
+        throw new Error("请选择简化模板的保存方式。");
+      }
+      const previousTemplate = input.destination === "original" ? current : null;
+      return saveTemplateAndFont(font, template, { ...font, glyphs: input.glyphs }, previousTemplate);
     }),
     confirmFont: id => queue(async () => {
       const font = await requireRecord("fonts", id);
@@ -225,12 +270,14 @@ function createProjects(root) {
       if (templateMatches(font.template, current)) throw new Error("字体已使用当前模板。");
       return write("fonts", fontData(current, { ...font, glyphs }, id));
     }),
-    keepTemplate: id => queue(async () => {
+    keepTemplate: (id, name) => queue(async () => {
       const font = await requireRecord("fonts", id);
       if (templateMatches(font.template, await read("templates", font.template.id))) {
         throw new Error("字体已使用当前模板。");
       }
-      return fork(font, { ...font.template, name: `${font.template.name}（保留）` });
+      const template = templateData({ ...font.template, name: projectName(name) }, randomUUID());
+      await requireUniqueName(template.name);
+      return saveTemplateAndFont(font, template, font);
     })
   };
 }

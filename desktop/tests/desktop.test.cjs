@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const { createHash } = require("node:crypto");
 const { EventEmitter } = require("node:events");
-const { mkdtemp, readFile, rm, writeFile } = require("node:fs/promises");
+const { mkdir, mkdtemp, readFile, rm, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const { Readable } = require("node:stream");
@@ -53,7 +53,7 @@ test("deleting a template with its linked fonts leaves unrelated projects intact
   const projects = createProjects(await temporary(t));
   const spec = { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] };
   const template = await projects.saveTemplate({ name: "Template", spec, disabledRegions: [] });
-  const other = await projects.saveTemplate({ name: "Template", spec, disabledRegions: [] });
+  const other = await projects.saveTemplate({ name: "Other template", spec, disabledRegions: [] });
   await projects.createFont(template.id);
   await projects.createFont(template.id);
   const unrelated = await projects.createFont(other.id);
@@ -133,7 +133,7 @@ test("copying a project creates an independent record and preserves the font's s
   const projects = createProjects(await temporary(t));
   const spec = { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] };
   const template = await projects.saveTemplate({ name: "Grid", spec, disabledRegions: [] });
-  const templateCopy = await projects.copyProject("template", template.id);
+  const templateCopy = await projects.copyProject("template", template.id, "Grid（副本）");
   assert.notEqual(templateCopy.id, template.id);
   assert.equal(templateCopy.name, "Grid（副本）");
   assert.deepEqual(templateCopy.spec, spec);
@@ -141,8 +141,8 @@ test("copying a project creates an independent record and preserves the font's s
   const font = await projects.createFont(template.id, { name: "Digits", characterGroups: ["digits"] });
   await projects.saveFont(font.id, { ...font, glyphs: { "0": [0] }, spacing: 30 });
   const [copy, second] = await Promise.all([
-    projects.copyProject("font", font.id),
-    projects.copyProject("font", font.id)
+    projects.copyProject("font", font.id, "Digits（副本）"),
+    projects.copyProject("font", font.id, "Digits（副本 2）")
   ]);
   assert.notEqual(copy.id, font.id);
   assert.equal(copy.name, "Digits（副本）");
@@ -154,6 +154,59 @@ test("copying a project creates an independent record and preserves the font's s
   assert.equal(copy.unconfirmed, undefined);
   await projects.deleteFont(font.id);
   assert.equal((await projects.load()).fonts.length, 2);
+});
+
+test("new project names are unique across templates and fonts, including simultaneous copies", async t => {
+  const projects = createProjects(await temporary(t));
+  const draft = { name: "Grid", spec: { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] }, disabledRegions: [] };
+  const template = await projects.saveTemplate(draft);
+  await assert.rejects(projects.createFont(template.id, { name: "  GRID  " }), /同名/);
+  const font = await projects.createFont(template.id, { name: "Digits" });
+  await assert.rejects(projects.saveTemplate({ ...draft, name: "digits" }), /同名/);
+  await assert.rejects(projects.saveTemplate({ ...template, name: "Digits" }), /同名/);
+  await assert.rejects(projects.saveFont(font.id, { ...font, name: "Grid" }), /同名/);
+  const copies = await Promise.allSettled([
+    projects.copyProject("template", template.id, "副本"),
+    projects.copyProject("font", font.id, "副本")
+  ]);
+  assert.equal(copies.filter(result => result.status === "fulfilled").length, 1);
+  assert.match(copies.find(result => result.status === "rejected").reason.message, /同名/);
+});
+
+test("simplifying the linked template preserves other font snapshots and a named fork leaves the source intact", async t => {
+  const root = await temporary(t);
+  const projects = createProjects(root);
+  const spec = { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [{ a: [240, 0], b: [240, 600] }] };
+  const template = await projects.saveTemplate({ name: "Grid", spec, disabledRegions: [] });
+  const first = await projects.createFont(template.id, { name: "First" });
+  const second = await projects.createFont(template.id, { name: "Second" });
+  const simplified = { spec: { ...spec, strokes: [] }, disabledRegions: [], glyphs: { A: [0] } };
+  await assert.rejects(projects.simplifyFont(first.id, { ...simplified, destination: "independent", name: "Second" }), /同名/);
+  const fork = await projects.simplifyFont(first.id, { ...simplified, destination: "independent", name: "Separate grid" });
+  assert.notEqual(fork.template.id, template.id);
+  assert.deepEqual(fork.font.glyphs, { A: [0] });
+  assert.deepEqual((await projects.load()).templates.find(record => record.id === template.id), template);
+
+  const third = await projects.createFont(template.id, { name: "Third" });
+  const blockedWrite = join(root, "fonts", third.id + ".json.tmp");
+  await mkdir(blockedWrite);
+  await assert.rejects(projects.simplifyFont(third.id, { ...simplified, destination: "original" }));
+  assert.deepEqual((await projects.load()).templates.find(record => record.id === template.id), template);
+  await rm(blockedWrite, { recursive: true });
+  const inPlace = await projects.simplifyFont(third.id, { ...simplified, destination: "original" });
+  assert.equal(inPlace.template.id, template.id);
+  assert.deepEqual(inPlace.template.spec, simplified.spec);
+  assert.deepEqual(inPlace.font.template, inPlace.template);
+  const reloaded = await createProjects(root).load();
+  assert.deepEqual(reloaded.fonts.find(record => record.id === second.id), second);
+  await assert.rejects(projects.saveFont(second.id, second), /模板已更改/);
+  await assert.rejects(projects.keepTemplate(second.id, "First"), /同名/);
+  const kept = await projects.keepTemplate(second.id, "Kept original");
+  assert.equal(kept.template.name, "Kept original");
+  assert.deepEqual(kept.template.spec, spec);
+  assert.deepEqual(kept.font.template, kept.template);
+  await projects.deleteTemplate(template.id);
+  await assert.rejects(projects.simplifyFont(third.id, { ...simplified, destination: "original" }), /原模板已删除/);
 });
 
 test("only a newer stable release with a verifiable Windows archive is eligible", () => {

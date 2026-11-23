@@ -1043,30 +1043,37 @@
   $("fill-point-outline").addEventListener("click", () => applyPointOutline(true));
   $("clear-point-outline").addEventListener("click", () => applyPointOutline(false));
 
-  $("simplify-template").addEventListener("click", () => {
+  function simplifiedTemplate() {
     const before = getGeometry(project.template);
+    const result = G.simplify(project.template, before, project.glyphs);
+    const geometry = result?.geometry ?? before;
+    const glyphs = result?.glyphs ?? project.glyphs;
+    const used = new Set(Object.values(glyphs).flat());
+    const disabledRegions = geometry.faces.filter(face => !used.has(face.id)).map(face => face.id);
+    if (!result && pack(disabledRegions) === pack(project.disabledRegions)) return null;
+    if (result) getGeometry(result.draft, geometry);
+    return { spec: result?.draft ?? project.template, glyphs, disabledRegions };
+  }
+
+  $("simplify-template").addEventListener("click", () => {
+    if (workspace) return workspace.simplifyFont();
     try {
-      const result = G.simplify(project.template, before, project.glyphs);
-      const geometry = result?.geometry ?? before;
-      const glyphs = result?.glyphs ?? project.glyphs;
-      const used = new Set(Object.values(glyphs).flat());
-      const disabled = geometry.faces.filter(face => !used.has(face.id)).map(face => face.id);
-      if (!result && disabled.length === project.disabledRegions.length) {
+      const before = getGeometry(project.template);
+      const result = simplifiedTemplate();
+      if (!result) {
         notify("没有可合并或新禁用的区块。");
         return;
       }
-      if (result) getGeometry(result.draft, geometry);
+      const count = getGeometry(result.spec).faces.length;
       resetPointer();
       change(() => {
-        if (result) {
-          project.draft = result.draft;
-          project.template = copy(result.draft);
-          project.glyphs = glyphs;
-        }
-        project.disabledRegions = disabled;
+        project.draft = result.spec;
+        project.template = copy(result.spec);
+        project.glyphs = result.glyphs;
+        project.disabledRegions = result.disabledRegions;
       });
-      const merged = result ? `区块数由 ${before.faces.length} 减为 ${geometry.faces.length}。` : "";
-      notify(`${merged}共禁用 ${disabled.length} 个未使用区块。可撤销。`);
+      const merged = count < before.faces.length ? `区块数由 ${before.faces.length} 减为 ${count}。` : "";
+      notify(`${merged}共禁用 ${result.disabledRegions.length} 个未使用区块。可撤销。`);
     } catch (error) {
       notify(error.message);
     }
@@ -1098,7 +1105,8 @@
   });
   $("font-name").addEventListener("change", event => {
     const name = event.target.value.trim() || "Glyph Cut";
-    if (name !== project.fontName) change(() => { project.fontName = name; });
+    if (name !== project.fontName && (!workspace || workspace.validEditorName(name))) change(() => { project.fontName = name; });
+    else if (workspace) event.target.value = project.fontName;
     else event.target.value = name;
   });
   for (const id of workspace ? ["spacing"] : ["spacing", "baseline"]) {
@@ -1272,7 +1280,7 @@ ${paths}
     document.body.inert = true;
     if (workspace) {
       await workspace.start({
-        project: () => project, geometry: getGeometry, blankDraft, validateSpec, notify, download, safeName,
+        project: () => project, geometry: getGeometry, blankDraft, validateSpec, notify, download, safeName, simplifiedTemplate,
         prepareTemplate: () => { if (!ready()) generate(); },
         open: fields => {
           project = readProject({ ...newProject(), ...fields, format: "glyph-cut-v1" });

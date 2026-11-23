@@ -43,7 +43,7 @@ h2 {font-size:.94rem; font-weight:760; letter-spacing:.015em}
 .fields {display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:11px 9px; margin:13px 0 10px}
 .fields label {display:flex; flex-direction:column; gap:5px; font-size:.875rem; font-weight:620; color:#434f61}
 .fields .wide {grid-column:1/-1}
-input:not([type=checkbox],[type=file]) {width:100%; min-width:0; height:37px; border-radius:6px; border:1px solid #d3dbe7; padding:6px 8px; color:#192132; background:#f9fafc}
+input:not([type=checkbox],[type=radio],[type=file]) {width:100%; min-width:0; height:37px; border-radius:6px; border:1px solid #d3dbe7; padding:6px 8px; color:#192132; background:#f9fafc}
 .fields input[type=number] {font-family:var(--mono); font-size:.9rem}
 .button {display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:37px; border-radius:6px; padding:6px 9px; border:1px solid #d5dce7; color:#233044; background:#fff; font-size:.875rem; font-weight:700}
 .button:hover:not(:disabled) {background:#eff3fa; border-color:#b7c5da}

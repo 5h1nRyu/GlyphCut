@@ -160,6 +160,7 @@
   cursor: pointer;
 }
 .desktop-font-scope input { margin: 0; accent-color: #52800b; }
+.desktop-font-scope label:has(input:disabled) { opacity: .55; cursor: default; }
 .desktop-font-scope span { margin-left: auto; font-family: var(--mono); color: var(--muted); }
 
 .desktop-library, .desktop-resolve {
@@ -330,6 +331,10 @@
 }
 .desktop-dialog-option input { margin: 0; accent-color: #52800b; }
 .desktop-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+#desktop-project-name-label { margin-top: 16px; }
+.desktop-project-note { color: var(--muted); font-size: .875rem; }
+.desktop-font-scope .desktop-project-note { margin: 0; }
+.desktop-project-error { color: #a02536; font-size: .875rem; }
 .desktop-dialog .button.danger { color: #fff; background: #a53041; border-color: #a53041; }
 .desktop-dialog .button.danger:hover { background: #862332; border-color: #862332; }
 .desktop-export-options { display: grid; gap: 8px; margin-top: 16px; }

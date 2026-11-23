@@ -19,6 +19,8 @@
   const svgNS = "http://www.w3.org/2000/svg";
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const sameShape = (a, b) => same(a.spec, b.spec) && same(a.disabledRegions, b.disabledRegions);
+  const nameKey = name => name.trim().normalize("NFC").toLowerCase();
+  const duplicateName = "已有同名的模板或字体，请换一个名称。";
   let studio;
   let page;
   let editingRecord;
@@ -47,7 +49,6 @@
     [...alphabet].filter(ch => font.glyphs[ch]?.length).slice(0, 3).join("") : font.sample;
   const editing = () => page === "template" || page === "font";
   const unconfirmedFont = () => page === "font" && editingRecord.unconfirmed === true;
-  const simplified = () => page === "font" && !sameShape(editingRecord.template, templateFields());
   function editorState() {
     if (page === "template") return { name: nameInput.value.trim(), ...templateFields() };
     return { ...fontFields(), ...templateFields() };
@@ -57,6 +58,26 @@
     const current = templates.get(font.template.id);
     return Boolean(current && !sameShape(font.template, current));
   };
+  const linkedFonts = id => [...fonts.values()].filter(font => font.template.id === id);
+
+  function nameTaken(name, record) {
+    const key = nameKey(name);
+    if (record && nameKey(record.name) === key) return false;
+    return [...templates.values(), ...fonts.values()].some(project => nameKey(project.name) === key);
+  }
+
+  function checkNewName(input) {
+    if (!input.value.trim()) throw new Error("请输入名称。");
+    if (nameTaken(input.value)) throw new Error(duplicateName);
+    return input.value.trim();
+  }
+
+  function suggestedName(base, suffix) {
+    const withSuffix = ending => base.slice(0, 100 - ending.length).replace(/[\uD800-\uDBFF]$/, "") + ending;
+    let name = withSuffix(suffix);
+    for (let n = 2; nameTaken(name); n++) name = withSuffix(`${suffix} ${n}`);
+    return name;
+  }
 
   function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -192,7 +213,10 @@
     copy.setAttribute("aria-label", copy.title);
     copy.append(icon("desktop-copy-icon"));
     copy.addEventListener("click", () => run(async () => {
-      const duplicate = await desktop.copyProject(kind, record.id);
+      const duplicate = await promptProject({
+        title: `拷贝${kindLabel}`, caption: "副本名称", name: suggestedName(record.name, "（副本）"), action: "创建副本"
+      }, name => desktop.copyProject(kind, record.id, name));
+      if (!duplicate) return;
       await reload();
       showMenu(page);
       studio.notify(`已创建${kindLabel}副本。`);
@@ -207,14 +231,15 @@
     remove.setAttribute("aria-label", label);
     remove.append(icon("desktop-trash-icon"));
     remove.addEventListener("click", () => run(async () => {
+      const hasLinkedFonts = isTemplate && linkedFonts(record.id).length > 0;
       $("desktop-delete-title").textContent = label + "？";
-      $("desktop-delete-detail").textContent = isTemplate ?
-        "保留的字体会继续使用各自内嵌的模板。" : "该字体及其字形将被删除。";
-      $("desktop-delete-linked-label").hidden = !isTemplate;
+      $("desktop-delete-detail").textContent = hasLinkedFonts ?
+        "保留的字体会继续使用各自内嵌的模板。" : isTemplate ? "该模板将被删除。" : "该字体及其字形将被删除。";
+      $("desktop-delete-linked-label").hidden = !hasLinkedFonts;
       const option = $("desktop-delete-linked");
       option.checked = false;
       if (await showDialog("desktop-delete-dialog") !== "delete") return;
-      await desktop.deleteProject(kind, record.id, isTemplate && option.checked);
+      await desktop.deleteProject(kind, record.id, hasLinkedFonts && option.checked);
       await reload();
       showMenu(page);
       studio.notify(`已${label}。`);
@@ -235,6 +260,69 @@
     return new Promise(resolve => {
       dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true });
     });
+  }
+
+  async function promptProject({ title, caption, name, action, simplify }, submit) {
+    const dialog = $("desktop-project-dialog");
+    const form = $("desktop-project-form");
+    const scope = $("desktop-simplify-destinations");
+    const original = scope.querySelector("[value=original]");
+    const independent = scope.querySelector("[value=independent]");
+    const input = $("desktop-project-name");
+    const error = $("desktop-project-error");
+    const note = $("desktop-simplify-note");
+    const listeners = new AbortController();
+    const options = { signal: listeners.signal };
+    let result;
+    let submitting = false;
+    $("desktop-project-title").textContent = title;
+    $("desktop-project-name-caption").textContent = caption;
+    $("desktop-project-submit").textContent = action;
+    scope.hidden = !simplify;
+    original.disabled = !simplify?.original;
+    independent.checked = true;
+    input.value = name;
+
+    function refresh() {
+      input.disabled = original.checked;
+      $("desktop-project-name-label").hidden = input.disabled;
+      note.textContent = original.disabled ? "原模板已删除，可以保存为独立模板。" :
+        `另有 ${simplify?.linked ?? 0} 个字体使用此模板。修改后，打开这些字体时需要处理模板变更。`;
+      note.hidden = !simplify || (!original.disabled && (!original.checked || !simplify.linked));
+      error.hidden = true;
+    }
+    refresh();
+    scope.addEventListener("change", refresh, options);
+    input.addEventListener("input", () => { error.hidden = true; }, options);
+    $("desktop-project-cancel").addEventListener("click", () => dialog.close(), options);
+    dialog.addEventListener("cancel", event => { if (submitting) event.preventDefault(); }, options);
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (submitting) return;
+      submitting = true;
+      form.inert = true;
+      try {
+        result = await submit(input.disabled ? undefined : checkNewName(input), original.checked ? "original" : "independent");
+        dialog.close();
+      } catch (failure) {
+        error.textContent = failure.message;
+        error.hidden = false;
+        form.inert = false;
+        (input.disabled ? original : input).focus();
+      } finally {
+        submitting = false;
+        form.inert = false;
+      }
+    }, options);
+    try {
+      const closed = showDialog(dialog.id);
+      input.focus();
+      input.select();
+      await closed;
+      return result;
+    } finally {
+      listeners.abort();
+    }
   }
 
   function setPage(next) {
@@ -268,7 +356,7 @@
 
     if (isTemplates) {
       for (const template of templates.values()) {
-        const linked = [...fonts.values()].filter(font => font.template.id === template.id).length;
+        const linked = linkedFonts(template.id).length;
         cards.append(projectCard(template, "template", {
           status: `${linked} 个关联字体`, image: templateArt(template), open: () => openTemplate(template)
         }));
@@ -346,8 +434,7 @@
   }
 
   async function createTemplate(dimensions) {
-    const name = setupName.value.trim();
-    if (!name) throw new Error("请输入模板名称。");
+    const name = checkNewName(setupName);
     const spec = studio.validateSpec({ ...dimensions, strokes: [] });
     const template = await desktop.saveTemplate({ name, spec, disabledRegions: [] });
     templates.set(template.id, template);
@@ -397,7 +484,7 @@
     clearTimeout(autoSaveTimer);
     saveFailed = false;
     updateSaveStatus();
-    if (dirty() && (page !== "template" || nameInput.value.trim())) {
+    if (dirty() && (page !== "template" || (nameInput.value.trim() && !nameTaken(nameInput.value, editingRecord)))) {
       autoSaveTimer = setTimeout(() => save().catch(error => studio.notify(error.message)), 650);
     }
   }
@@ -411,10 +498,9 @@
       templates.set(editingRecord.id, editingRecord);
     } else {
       if (!fields.name) throw new Error("请输入字体名称。");
-      const result = await desktop.saveFont(editingRecord.id, fields, simplified() ? { spec, disabledRegions } : null);
+      const result = await desktop.saveFont(editingRecord.id, fields);
       editingRecord = result.font;
       fonts.set(editingRecord.id, editingRecord);
-      if (result.template) templates.set(result.template.id, result.template);
     }
     savedEditorState = state;
   }
@@ -473,19 +559,36 @@
 
   async function openFontSetup() {
     await flushSave();
-    fontSetupName.value = `${editingRecord.name.slice(0, 96)} 字体`;
+    fontSetupName.value = suggestedName(editingRecord.name, " 字体");
     fontSetupForm.querySelectorAll("[name=character-group]").forEach(input => { input.checked = true; });
     $("desktop-font-setup-submit").disabled = false;
     setPage("font-setup");
   }
 
   async function createFont() {
-    const name = fontSetupName.value.trim();
-    if (!name) throw new Error("请输入字体名称。");
+    const name = checkNewName(fontSetupName);
     const characterGroups = new FormData(fontSetupForm).getAll("character-group");
     const font = await desktop.createFont(editingRecord.id, { name, characterGroups });
     fonts.set(font.id, font);
     openFont(font);
+  }
+
+  async function simplifyFont() {
+    const { template } = editingRecord;
+    const saved = await promptProject({
+      title: "简化模板", caption: "独立模板名称", name: suggestedName(template.name, "（简化）"), action: "简化并保存",
+      simplify: { original: templates.has(template.id), linked: linkedFonts(template.id).length - 1 }
+    }, async (name, destination) => {
+      const simplification = studio.simplifiedTemplate();
+      if (!simplification) throw new Error("没有可合并或新禁用的区块。");
+      await flushSave();
+      return desktop.simplifyFont(editingRecord.id, { ...simplification, name, destination });
+    });
+    if (!saved) return;
+    templates.set(saved.template.id, saved.template);
+    fonts.set(saved.font.id, saved.font);
+    openFont(saved.font);
+    studio.notify("模板已简化。");
   }
 
   function exportProject(templateOnly = false) {
@@ -557,7 +660,11 @@
   async function finishResolution(retain) {
     let font;
     if (retain) {
-      const result = await desktop.keepTemplate(resolvingFont.id);
+      const { id, template } = resolvingFont;
+      const result = await promptProject({
+        title: "保留旧模板", caption: "独立模板名称", name: suggestedName(template.name, "（保留）"), action: "保留模板"
+      }, name => desktop.keepTemplate(id, name));
+      if (!result) return;
       templates.set(result.template.id, result.template);
       font = result.font;
     } else {
@@ -718,7 +825,7 @@
     initializeUpdates();
     initializeExports();
     $("use-template").textContent = "使用此模板创建字体";
-    $("simplify-template").textContent = "简化为独立模板";
+    $("simplify-template").textContent = "简化模板";
     $("desktop-setup-fields").append($("dimensions"));
     $("apply-dimensions").textContent = "创建并编辑";
     $("apply-dimensions").classList.add("accent");
@@ -728,7 +835,7 @@
     history.className = "desktop-history";
     for (const button of history.children) button.className = "button";
     $("desktop-export-project").before(history);
-    for (const id of ["desktop-delete-dialog", "desktop-retain-font"]) {
+    for (const id of ["desktop-delete-dialog", "desktop-retain-font", "desktop-project-dialog"]) {
       $(id).addEventListener("keydown", event => event.stopPropagation());
     }
     $("desktop-template-identity").hidden = false;
@@ -736,7 +843,7 @@
     initializeSampleScroll();
     nameInput.addEventListener("input", markChanged);
     nameInput.addEventListener("change", () => {
-      if (!nameInput.value.trim()) nameInput.value = editingRecord.name;
+      if (!nameInput.value.trim() || !validEditorName(nameInput.value)) nameInput.value = editingRecord.name;
       markChanged();
     });
     $("desktop-setup-back").addEventListener("click", () => run(() => showMenu("templates")));
@@ -813,10 +920,17 @@
     });
   }
 
+  function validEditorName(name) {
+    if (!nameTaken(name, editingRecord)) return true;
+    studio.notify(duplicateName);
+    return false;
+  }
+
   globalThis.GlyphCutWorkspace = {
-    start, markChanged, editing, sampleText,
+    start, markChanged, editing, sampleText, validEditorName,
     createTemplate: dimensions => run(() => createTemplate(dimensions)),
     openFontSetup: () => run(openFontSetup),
+    simplifyFont: () => run(simplifyFont),
     refreshSample: () => refreshSample?.(),
     exportTemplate: () => run(() => exportProject(true))
   };

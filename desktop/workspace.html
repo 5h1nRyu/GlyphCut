@@ -101,6 +101,27 @@
     <button id="desktop-export-font-json" class="button block" type="button"><svg><use href="#i-download"/></svg>导出项目 JSON</button>
   </div>
 </dialog>
+<dialog id="desktop-project-dialog" class="desktop-dialog" aria-labelledby="desktop-project-title">
+  <form id="desktop-project-form">
+    <header><h2 id="desktop-project-title"></h2></header>
+    <fieldset id="desktop-simplify-destinations" class="desktop-font-scope" hidden>
+      <legend>保存方式</legend>
+      <label><input type="radio" name="destination" value="original">修改原模板</label>
+      <label><input type="radio" name="destination" value="independent" checked>保存为独立模板</label>
+      <p id="desktop-simplify-note" class="desktop-project-note" hidden></p>
+      <p class="desktop-project-note">简化会立即保存，并重新开始记录当前字体的撤销历史。</p>
+    </fieldset>
+    <label id="desktop-project-name-label" class="desktop-template-label">
+      <span id="desktop-project-name-caption"></span>
+      <input id="desktop-project-name" maxlength="100" spellcheck="false" required>
+    </label>
+    <p id="desktop-project-error" class="desktop-project-error" role="alert" hidden></p>
+    <footer class="desktop-dialog-actions">
+      <button id="desktop-project-cancel" class="button" type="button">取消</button>
+      <button id="desktop-project-submit" class="button accent" type="submit"></button>
+    </footer>
+  </form>
+</dialog>
 <dialog id="desktop-delete-dialog" class="desktop-dialog" aria-labelledby="desktop-delete-title" aria-describedby="desktop-delete-detail">
   <form method="dialog">
     <header><h2 id="desktop-delete-title"></h2></header>
