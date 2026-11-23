@@ -3,7 +3,24 @@ Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $helper = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../portable-update.ps1') -Raw -Encoding UTF8
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("GlyphCut [test] " + [char]0x6D4B + " " + [Guid]::NewGuid())
-$exe = Join-Path $env:SystemRoot 'System32/whoami.exe'
+[IO.Directory]::CreateDirectory($temp) | Out-Null
+$exe = Join-Path $temp 'Probe.exe'
+Add-Type -OutputAssembly $exe -OutputType ConsoleApplication -TypeDefinition @'
+using System;
+using System.IO;
+using System.Threading;
+public class Probe {
+    public static int Main() {
+        if (File.Exists(Path.Combine("resources", "app", "fail-startup"))) return 3;
+        var session = Environment.GetEnvironmentVariable("GLYPHCUT_UPDATE_SESSION");
+        if (!String.IsNullOrEmpty(session)) {
+            File.WriteAllText(Path.Combine(session, "window-ready"), "");
+            Thread.Sleep(700);
+        }
+        return 0;
+    }
+}
+'@
 
 function Assert-True($Condition, $Message) {
     if (-not $Condition) { throw $Message }
@@ -33,12 +50,15 @@ function Invoke-Updater($Mode, $Install, $Work, $Version, $Digest, $Expect) {
 }
 
 try {
-    foreach ($test in @('success', 'rollback')) {
+    foreach ($test in @('success', 'rollback', 'startup')) {
         $install = Join-Path $temp "$test/program"
-        $work = Join-Path $install '.glyphcut-update-test'
+        $work = Join-Path $install '.glyphcut-update-ABC123'
         $source = Join-Path $temp "$test/source/GlyphCut-Windows-x64"
         New-Package $install '1.1.0' 'old-only.dll'
         New-Package $source '1.2.0' 'new-only.dll'
+        if ($test -eq 'startup') {
+            Set-Content -LiteralPath (Join-Path $source 'resources/app/fail-startup') -Value ''
+        }
         [IO.Directory]::CreateDirectory($work) | Out-Null
         Set-Content -LiteralPath (Join-Path $install 'user-export.svg') -Value 'keep me' -Encoding ASCII
         $archive = Join-Path $work 'bundle.zip'
@@ -58,10 +78,16 @@ try {
             Assert-True (-not (Test-Path -LiteralPath (Join-Path $install 'old-only.dll'))) 'Obsolete file stayed installed.'
             $expectedVersion = '1.2.0'
         } else {
-            Remove-Item -LiteralPath (Join-Path $work 'payload/GlyphCut-Windows-x64/new-only.dll')
+            if ($test -eq 'rollback') {
+                Remove-Item -LiteralPath (Join-Path $work 'payload/GlyphCut-Windows-x64/new-only.dll')
+            }
             Invoke-Updater apply $install $work '1.2.0' $digest 1
             Assert-True (Test-Path -LiteralPath (Join-Path $install 'old-only.dll')) 'Old file was not restored.'
-            Assert-True (Test-Path -LiteralPath (Join-Path $install '.glyphcut-update-error.txt')) 'Rollback was not reported.'
+            $log = Join-Path $install '.glyphcut-update-error.txt'
+            Assert-True (Test-Path -LiteralPath $log) 'Rollback was not reported.'
+            if ($test -eq 'startup') {
+                Assert-True ((Get-Content -LiteralPath $log -Raw -Encoding UTF8) -match '3') 'The startup exit was not reported.'
+            }
             $expectedVersion = '1.1.0'
         }
         $package = Get-Content -LiteralPath (Join-Path $install 'resources/app/package.json') -Raw | ConvertFrom-Json

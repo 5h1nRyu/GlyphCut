@@ -211,6 +211,7 @@
 .desktop-update-dialog header h2 { font-size: 1.15rem; }
 .desktop-update-dialog p, .desktop-update-dialog progress { margin-block: 10px; }
 .desktop-update-dialog progress { width: 100%; accent-color: #52800b; }
+.desktop-update-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .desktop-update-dialog pre {
   margin-block: 12px;
   max-height: 28vh;

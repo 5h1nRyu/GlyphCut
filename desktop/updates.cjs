@@ -3,17 +3,19 @@
 const { spawn, execFile } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const { once } = require("node:events");
-const { createWriteStream, rmSync } = require("node:fs");
+const { createWriteStream, existsSync, rmSync } = require("node:fs");
 const { mkdtemp, readFile, rm } = require("node:fs/promises");
 const { basename, dirname, join } = require("node:path");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
+const { setTimeout: delay } = require("node:timers/promises");
 const { promisify } = require("node:util");
 
 const execute = promisify(execFile);
 const repository = "5h1nRyu/GlyphCut";
 const archive = "GlyphCut-Windows-x64.zip";
 const latest = `https://api.github.com/repos/${repository}/releases/latest`;
+const releasePage = `https://github.com/${repository}/releases/latest`;
 const versionPattern = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/;
 const downloadHosts = new Set(["github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"]);
 const headers = { "User-Agent": "GlyphCut-Desktop" };
@@ -111,6 +113,7 @@ async function fetchArchive(request, release, target, signal, report) {
 }
 
 function networkErrorCode(error) {
+  if (error.name === "TimeoutError") return "（连接超时）";
   const code = error.message.match(/\bERR_[A-Z0-9_]+\b/)?.[0];
   return code ? `（${code}）` : "";
 }
@@ -150,7 +153,10 @@ function createUpdater({ version, executable, notify, request = fetch, supported
         signal: AbortSignal.timeout(15000), redirect: "error", headers: { ...headers, Accept: "application/vnd.github+json" }
       });
       if (response.status === 404) return publish("current");
-      if (!response.ok) throw new Error("无法查询 GitHub Releases，请稍后重试。");
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
+        return publish("checkFailed", { message: `无法检查更新（HTTP ${response.status}）。请重试或用浏览器下载。` });
+      }
       release = findUpdate(await response.json(), version);
       return publish(release ? "available" : "current");
     } catch (error) {
@@ -193,16 +199,28 @@ function createUpdater({ version, executable, notify, request = fetch, supported
     if (state.phase !== "ready") return false;
     publish("installing");
     try {
+      const ready = join(workDir, "installer-ready");
+      await Promise.all(["installer-ready", "install-error.txt"].map(name =>
+        rm(join(workDir, name), { force: true })));
       // The helper must have a working directory outside the files it moves or removes.
       installer = spawn(powershell, await argumentsFor("apply"), {
         detached: true, windowsHide: true, stdio: "ignore", cwd: installDir
       });
       await once(installer, "spawn");
+      const deadline = Date.now() + 15000;
+      while (!existsSync(ready) && installer.exitCode === null && Date.now() < deadline) {
+        await delay(100);
+      }
+      if (!existsSync(ready) || installer.exitCode !== null) {
+        throw new Error("Windows 更新助手未就绪。");
+      }
       installer.unref();
       return true;
     } catch {
+      installer?.kill();
       installer = undefined;
-      publish("ready", { message: "无法启动更新器，请重试。" });
+      const reason = (await readFile(join(workDir, "install-error.txt"), "utf8").catch(() => "")).trim();
+      publish("ready", { message: reason || "无法启动更新器。请重试或用浏览器下载。" });
       return false;
     }
   }
@@ -224,4 +242,4 @@ function createUpdater({ version, executable, notify, request = fetch, supported
   };
 }
 
-module.exports = { createUpdater, createUpdateRequest, findUpdate, fetchArchive };
+module.exports = { createUpdater, createUpdateRequest, findUpdate, fetchArchive, releasePage };

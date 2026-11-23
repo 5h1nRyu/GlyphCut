@@ -35,13 +35,14 @@ function Move-Entry($From, $To) {
     }
 }
 
-function Start-GlyphCut($Executable) {
+function Start-GlyphCut($Executable, $SessionName) {
     $launch = [Diagnostics.ProcessStartInfo]::new()
     $launch.FileName = $Executable
     $launch.WorkingDirectory = $install
     $launch.UseShellExecute = $false
-    $process = [Diagnostics.Process]::Start($launch)
-    if ($process) { $process.Dispose() }
+    $launch.EnvironmentVariables.Remove('GLYPHCUT_UPDATE_SESSION')
+    if ($SessionName) { $launch.EnvironmentVariables['GLYPHCUT_UPDATE_SESSION'] = $SessionName }
+    return [Diagnostics.Process]::Start($launch)
 }
 
 if ($Update.mode -eq 'stage') {
@@ -84,16 +85,28 @@ if ($Update.mode -eq 'stage') {
 }
 if ($Update.mode -ne 'apply') { throw 'Unknown update phase.' }
 
-$running = Get-Process -Id $Update.pid -ErrorAction SilentlyContinue
-if ($running -and -not $running.WaitForExit(120000)) { exit 2 }
+try {
+    $newFiles = @(Read-PackageFiles $incoming)
+    $oldFiles = @(Read-PackageFiles $install)
+    $running = Get-Process -Id $Update.pid -ErrorAction SilentlyContinue
+    # Open the process handle while the original program is still alive.
+    if ($running) { [void]$running.Handle }
+    [IO.File]::WriteAllText((Join-Path $work 'installer-ready'), '')
+} catch {
+    [IO.File]::WriteAllText((Join-Path $work 'install-error.txt'), "更新助手启动失败。$_")
+    exit 2
+}
 
 $backup = Join-Path $work 'backup'
 $exe = Join-Path $install 'GlyphCut.exe'
 $movedOld = [Collections.Generic.List[string]]::new()
 $movedNew = [Collections.Generic.List[string]]::new()
+$reopened = $null
 try {
-    $newFiles = @(Read-PackageFiles $incoming)
-    $oldFiles = @(Read-PackageFiles $install)
+    if ($running -and -not $running.WaitForExit(120000)) {
+        [IO.File]::WriteAllText((Join-Path $install '.glyphcut-update-error.txt'), '程序退出超时。请退出程序后重新更新。')
+        exit 2
+    }
     [IO.Directory]::CreateDirectory($backup) | Out-Null
     foreach ($name in $oldFiles) {
         $current = Join-Path $install $name
@@ -106,10 +119,26 @@ try {
         Move-Entry (Join-Path $incoming $name) (Join-Path $install $name)
         $movedNew.Add($name)
     }
-    Start-GlyphCut $exe
+    $reopened = Start-GlyphCut $exe (Split-Path -Leaf $work)
+    $visibility = Join-Path $work 'window-ready'
+    for ($attempt = 0; $attempt -lt 120 -and -not (Test-Path -LiteralPath $visibility); $attempt++) {
+        if ($reopened.HasExited) { throw "新版程序在打开窗口前退出，退出代码 $($reopened.ExitCode)。" }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not (Test-Path -LiteralPath $visibility)) { throw '新版程序未在 30 秒内确认窗口已打开。' }
+    $reopened.Dispose()
 } catch {
     $failure = $_.Exception.Message
     $restored = $true
+    if ($reopened) {
+        try {
+            if (-not $reopened.HasExited) {
+                $reopened.Kill()
+                if (-not $reopened.WaitForExit(5000)) { $restored = $false }
+            }
+        } catch { $restored = $false }
+        finally { $reopened.Dispose() }
+    }
     foreach ($name in $movedNew) {
         try { Move-Entry (Join-Path $install $name) (Join-Path $incoming $name) }
         catch { $restored = $false }
@@ -123,7 +152,8 @@ try {
         try {
             $log = Join-Path $install '.glyphcut-update-error.txt'
             [IO.File]::WriteAllText($log, "$message`n已还原更新前的程序。")
-            Start-GlyphCut $exe
+            $restoredProcess = Start-GlyphCut $exe
+            if ($restoredProcess) { $restoredProcess.Dispose() }
             Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
             exit 1
         } catch { $message += "`n可从原程序目录重新启动。`n$($_.Exception.Message)" }

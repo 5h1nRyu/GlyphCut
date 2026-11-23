@@ -9,7 +9,7 @@ const { join } = require("node:path");
 const { Readable } = require("node:stream");
 const { test } = require("node:test");
 const { createProjects } = require("../projects.cjs");
-const { createUpdateRequest, fetchArchive, findUpdate } = require("../updates.cjs");
+const { createUpdater, createUpdateRequest, fetchArchive, findUpdate } = require("../updates.cjs");
 
 async function temporary(t) {
   const folder = await mkdtemp(join(tmpdir(), "glyphcut-test-"));
@@ -111,4 +111,20 @@ test("Electron transport returns each redirect to the updater and streams the ve
   assert.ok(requests.every(options =>
     options.redirect === "manual" && options.cache === "no-store" && options.credentials === "omit"));
   assert.deepEqual(await readFile(archive), payload);
+});
+
+
+test("update checking reports proxy errors, timeouts and HTTP status codes", async () => {
+  const check = request => createUpdater({
+    version: "1.1.3", executable: "GlyphCut.exe", notify() {}, request, supported: true
+  }).check();
+  for (const [request, detail] of [
+    [async () => new Response(null, { status: 403 }), "HTTP 403"],
+    [async () => { throw new DOMException("The operation timed out.", "TimeoutError"); }, "连接超时"],
+    [async () => { throw new Error("net::ERR_PROXY_CONNECTION_FAILED"); }, "ERR_PROXY_CONNECTION_FAILED"]
+  ]) {
+    const result = await check(request);
+    assert.equal(result.phase, "checkFailed");
+    assert.ok(result.message.includes(detail));
+  }
 });

@@ -379,6 +379,7 @@
     const button = $("desktop-update");
     const panel = $("desktop-update-dialog");
     const action = $("desktop-update-action");
+    const browser = $("desktop-update-browser");
     const meter = $("desktop-update-progress");
     const notes = $("desktop-update-notes");
     let phase;
@@ -409,6 +410,7 @@
       notes.textContent = state.notes ?? "";
       action.hidden = !actions[phase];
       action.textContent = actions[phase] ?? "";
+      browser.hidden = phase !== "checkFailed" && !(state.message && phase === "available");
     }
 
     const report = () => studio.notify("无法处理更新，请稍后重试。");
@@ -417,6 +419,7 @@
       if (["idle", "checkFailed", "current"].includes(phase)) desktop.checkForUpdate().catch(report);
     });
     panel.addEventListener("keydown", event => event.stopPropagation());
+    browser.addEventListener("click", () => desktop.openReleasePage().catch(report));
     action.addEventListener("click", () => {
       if (phase === "available") desktop.downloadUpdate().catch(report);
       else if (phase === "ready") desktop.installUpdate().catch(report);

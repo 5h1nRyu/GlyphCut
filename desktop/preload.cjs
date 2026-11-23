@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("glyphCutDesktop", {
   checkForUpdate: () => ipcRenderer.invoke("update:check"),
   downloadUpdate: () => ipcRenderer.invoke("update:download"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
+  openReleasePage: () => ipcRenderer.invoke("update:open-release"),
   onUpdate: callback => {
     ipcRenderer.on("update:state", (_, state) => callback(state));
   },

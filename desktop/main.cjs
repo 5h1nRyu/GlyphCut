@@ -1,10 +1,10 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, ipcMain, net, protocol } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } = require("electron");
 const { readFile, unlink, writeFile } = require("node:fs/promises");
 const { basename, dirname, extname, join } = require("node:path");
 const { createProjects } = require("./projects.cjs");
-const { createUpdater, createUpdateRequest } = require("./updates.cjs");
+const { createUpdater, createUpdateRequest, releasePage } = require("./updates.cjs");
 
 const page = "glyph-cut://studio/index.html";
 const files = new Map([
@@ -94,6 +94,10 @@ function registerFiles() {
       return updates[method]();
     });
   }
+  ipcMain.handle("update:open-release", event => {
+    trustedWindow(event);
+    return shell.openExternal(releasePage);
+  });
   ipcMain.handle("update:install", async event => {
     trustedWindow(event);
     if (await updates.install()) app.quit();
@@ -159,7 +163,13 @@ function createWindow() {
     const window = mainWindow;
     window.show();
     if (updates.status().phase === "unsupported") return;
-    const log = join(dirname(process.execPath), ".glyphcut-update-error.txt");
+    const installDir = dirname(process.execPath);
+    const updateSession = process.env.GLYPHCUT_UPDATE_SESSION;
+    delete process.env.GLYPHCUT_UPDATE_SESSION;
+    if (updateSession && /^\.glyphcut-update-[a-z0-9]{6}$/i.test(updateSession)) {
+      await writeFile(join(installDir, updateSession, "window-ready"), "", { flag: "wx" }).catch(() => {});
+    }
+    const log = join(installDir, ".glyphcut-update-error.txt");
     try {
       const detail = await readFile(log, "utf8");
       await unlink(log);
