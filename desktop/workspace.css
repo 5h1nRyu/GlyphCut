@@ -85,9 +85,16 @@
   overflow: auto;
   padding: 24px 16px;
 }
-.desktop-setup-content { width: min(100%, 420px); margin-inline: auto; }
+.desktop-setup-content { width: min(100%, 820px); margin-inline: auto; }
 .desktop-setup-content h1 { margin: 18px 0 12px; font-size: 1.5rem; }
-#desktop-setup-fields {
+.desktop-setup-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 16px;
+  align-items: start;
+}
+#desktop-setup-fields, .desktop-setup-preview {
+  min-width: 0;
   padding: 18px;
   border: 1px solid var(--edge);
   border-radius: 10px;
@@ -99,6 +106,23 @@
   font-size: .875rem;
   font-weight: 620;
   color: #434f61;
+}
+.desktop-setup-preview > p { margin-top: 4px; color: var(--muted); overflow-wrap: anywhere; }
+.desktop-setup-stage {
+  display: grid;
+  place-items: center;
+  height: clamp(168px, 38dvh, 300px);
+  margin-top: 12px;
+  border-radius: 6px;
+  background: #edf0f5;
+  text-align: center;
+  color: var(--muted);
+}
+#desktop-setup-preview-canvas { display: block; width: 100%; height: 100%; }
+#desktop-setup-preview-paper { fill: #f8fafc; stroke: #9badc6; }
+#desktop-setup-preview-grid { fill: none; stroke: #a7b5c9; stroke-width: .75; }
+@media (max-width: 480px) {
+  .desktop-setup-columns { grid-template-columns: minmax(0, 1fr); }
 }
 
 .desktop-library, .desktop-resolve {
@@ -238,11 +262,25 @@
 .desktop-delete:hover, .desktop-delete:focus-visible { color: #a02536; background: #fbe3e6; }
 .desktop-window-controls .desktop-update-button { width: auto; padding-inline: 12px; font-size: .8rem; }
 .desktop-window-controls .desktop-update-button.available { color: var(--accent); }
-.desktop-update-dialog { width: min(470px, 90vw); padding: 20px; border: 1px solid #cfd8e5; border-radius: 10px; color: #161f2c; }
-.desktop-update-dialog::backdrop { background: #141b2766; }
-.desktop-update-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
-.desktop-update-dialog header h2 { font-size: 1.15rem; }
-.desktop-update-dialog p, .desktop-update-dialog progress { margin-block: 10px; }
+.desktop-dialog { width: min(470px, 90vw); padding: 20px; border: 1px solid #cfd8e5; border-radius: 10px; color: #161f2c; }
+.desktop-dialog::backdrop { background: #141b2766; }
+.desktop-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.desktop-dialog header h2 { font-size: 1.15rem; overflow-wrap: anywhere; }
+.desktop-dialog p, .desktop-update-dialog progress { margin-block: 10px; overflow-wrap: anywhere; }
+.desktop-dialog-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px;
+  border-radius: 6px;
+  background: #f3f5f8;
+  font-size: .875rem;
+}
+.desktop-dialog-option input { margin: 0; accent-color: #52800b; }
+.desktop-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.desktop-dialog .button.danger { color: #fff; background: #a53041; border-color: #a53041; }
+.desktop-dialog .button.danger:hover { background: #862332; border-color: #862332; }
 .desktop-update-dialog progress { width: 100%; accent-color: #52800b; }
 .desktop-update-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .desktop-update-dialog pre {

@@ -27,10 +27,23 @@
   <div class="desktop-setup-content">
     <button id="desktop-setup-back" class="button" type="button">返回模板菜单</button>
     <h1 id="desktop-setup-title">创建新模板</h1>
-    <div id="desktop-setup-fields">
-      <label class="desktop-template-label">模板名称
-        <input id="desktop-setup-name" form="dimensions" maxlength="100" spellcheck="false" required>
-      </label>
+    <div class="desktop-setup-columns">
+      <div id="desktop-setup-fields">
+        <label class="desktop-template-label">模板名称
+          <input id="desktop-setup-name" form="dimensions" maxlength="100" spellcheck="false" required>
+        </label>
+      </div>
+      <section class="desktop-setup-preview" aria-labelledby="desktop-setup-preview-title">
+        <h2 id="desktop-setup-preview-title">模板预览</h2>
+        <p id="desktop-setup-preview-name"></p>
+        <div class="desktop-setup-stage">
+          <svg id="desktop-setup-preview-canvas" aria-hidden="true">
+            <rect id="desktop-setup-preview-paper" vector-effect="non-scaling-stroke"/>
+            <path id="desktop-setup-preview-grid" vector-effect="non-scaling-stroke"/>
+          </svg>
+          <p id="desktop-setup-preview-empty" hidden>请输入有效的画布与网格尺寸。</p>
+        </div>
+      </section>
     </div>
   </div>
 </main>
@@ -38,7 +51,7 @@
   <button id="desktop-editor-back" type="button" class="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg><span id="desktop-back-label"></span></button>
   <span id="desktop-font-title" class="desktop-font-title" hidden></span>
   <span id="desktop-save-status" class="desktop-save-status" role="status"></span>
-  <button id="desktop-export-project" type="button" class="button">导出项目 JSON</button>
+  <button id="desktop-export-project" type="button" class="button">导出</button>
   <button id="desktop-save" type="button" class="button accent">保存</button>
 </div>
 <main id="desktop-resolve" class="desktop-resolve" aria-labelledby="desktop-resolve-title" hidden>
@@ -59,7 +72,31 @@
     </section>
   </div>
 </main>
-<dialog id="desktop-update-dialog" class="desktop-update-dialog" aria-labelledby="desktop-update-title">
+<dialog id="desktop-delete-dialog" class="desktop-dialog" aria-labelledby="desktop-delete-title" aria-describedby="desktop-delete-detail">
+  <form method="dialog">
+    <header><h2 id="desktop-delete-title"></h2></header>
+    <p id="desktop-delete-detail"></p>
+    <label id="desktop-delete-linked-label" class="desktop-dialog-option" hidden>
+      <input id="desktop-delete-linked" type="checkbox">同时删除关联字体
+    </label>
+    <footer class="desktop-dialog-actions">
+      <button type="submit" value="cancel" class="button" autofocus>取消</button>
+      <button type="submit" value="delete" class="button danger">删除</button>
+    </footer>
+  </form>
+</dialog>
+<dialog id="desktop-retain-font" class="desktop-dialog" aria-labelledby="desktop-retain-title" aria-describedby="desktop-retain-detail">
+  <form method="dialog">
+    <header><h2 id="desktop-retain-title">保留此字体项目？</h2></header>
+    <p id="desktop-retain-detail"></p>
+    <footer class="desktop-dialog-actions">
+      <button type="submit" value="cancel" class="button" autofocus>继续编辑</button>
+      <button type="submit" value="discard" class="button">不保留</button>
+      <button type="submit" value="keep" class="button accent">保留</button>
+    </footer>
+  </form>
+</dialog>
+<dialog id="desktop-update-dialog" class="desktop-dialog desktop-update-dialog" aria-labelledby="desktop-update-title">
   <form method="dialog">
     <header><h2 id="desktop-update-title">程序更新</h2><button type="submit" class="button" aria-label="关闭更新窗口">关闭</button></header>
   </form>

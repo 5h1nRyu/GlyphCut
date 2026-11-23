@@ -2,7 +2,7 @@
 
 const { randomUUID } = require("node:crypto");
 const { isDeepStrictEqual } = require("node:util");
-const { mkdir, readdir, readFile, rename, rm, writeFile } = require("node:fs/promises");
+const { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } = require("node:fs/promises");
 const { join } = require("node:path");
 
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
@@ -36,7 +36,8 @@ function fontData(template, project, id) {
       typeof character !== "string" || !/^[A-Za-z0-9]$/.test(character)) {
     throw new Error("字体数据无效。");
   }
-  return { format: fontFormat, id, name: name.trim(), template, glyphs, baseline, spacing, sample, character };
+  return { format: fontFormat, id, name: name.trim(), template, glyphs, baseline, spacing, sample, character,
+    ...(project.unconfirmed === true ? { unconfirmed: true } : {}) };
 }
 
 function createProjects(root) {
@@ -105,6 +106,31 @@ function createProjects(root) {
     return record;
   }
 
+  async function deleteLinkedProjects(id) {
+    await requireRecord("templates", id);
+    const linked = (await list("fonts", [])).filter(font => font.template.id === id);
+    const records = linked.map(font => ["fonts", font.id]);
+    records.push(["templates", id]);
+    const staging = await mkdtemp(join(root, ".deleting-"));
+    const moved = [];
+    try {
+      for (const [kind, recordId] of records) {
+        const source = path(kind, recordId);
+        const destination = join(staging, `${kind}-${recordId}.json`);
+        await rename(source, destination);
+        moved.push({ source, destination });
+      }
+    } catch (error) {
+      const restored = await Promise.allSettled(moved.map(({ source, destination }) => rename(destination, source)));
+      if (restored.some(result => result.status === "rejected")) {
+        throw new Error(`部分项目无法恢复，文件保存在 ${staging}。`, { cause: error });
+      }
+      await rm(staging, { recursive: true, force: true }).catch(() => {});
+      throw error;
+    }
+    await rm(staging, { recursive: true, force: true }).catch(() => {});
+  }
+
   async function fork(font, input, changes = font) {
     const existing = await list("templates", []);
     const base = input.name.slice(0, 84);
@@ -134,13 +160,14 @@ function createProjects(root) {
       if (input.id) await requireRecord("templates", input.id);
       return write("templates", templateData(input, input.id ?? randomUUID()));
     }),
-    deleteTemplate: id => queue(() => rm(path("templates", id), { force: true })),
+    deleteTemplate: (id, linked) => queue(() => linked === true ?
+      deleteLinkedProjects(id) : rm(path("templates", id), { force: true })),
     deleteFont: id => queue(() => rm(path("fonts", id), { force: true })),
     createFont: templateId => queue(async () => {
       const template = await requireRecord("templates", templateId);
       const font = fontData(template, {
         name: `${template.name.slice(0, 96)} 字体`,
-        glyphs: {}, baseline: 86, spacing: 18, sample: "ABC 123", character: "A"
+        glyphs: {}, baseline: 86, spacing: 18, sample: "ABC 123", character: "A", unconfirmed: true
       }, randomUUID());
       return write("fonts", font);
     }),
@@ -149,8 +176,15 @@ function createProjects(root) {
       const current = await read("templates", font.template.id);
       if (current && !templateMatches(font.template, current)) throw new Error("关联模板已更改，请先处理模板变更。");
       const template = current ?? font.template;
-      if (simplified) return fork(font, { ...simplified, name: `${template.name}（简化）` }, changes);
-      return { font: await write("fonts", fontData(template, changes, id)) };
+      const fields = { ...changes, unconfirmed: font.unconfirmed };
+      if (simplified) return fork(font, { ...simplified, name: `${template.name}（简化）` }, fields);
+      return { font: await write("fonts", fontData(template, fields, id)) };
+    }),
+    confirmFont: id => queue(async () => {
+      const font = await requireRecord("fonts", id);
+      if (!font.unconfirmed) return font;
+      delete font.unconfirmed;
+      return write("fonts", font);
     }),
     adaptFont: (id, previewTemplate, glyphs) => queue(async () => {
       const font = await requireRecord("fonts", id);

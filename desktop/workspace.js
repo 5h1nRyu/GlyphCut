@@ -9,6 +9,9 @@
   const templateSetup = $("desktop-template-setup");
   const resolvePanel = $("desktop-resolve");
   const nameInput = $("desktop-template-name");
+  const setupName = $("desktop-setup-name");
+  const setupCanvas = $("desktop-setup-preview-canvas");
+  const dimensions = ["width", "height", "stepX", "stepY"];
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const svgNS = "http://www.w3.org/2000/svg";
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -38,6 +41,7 @@
       sample: p.sample, character: p.character };
   };
   const editing = () => page === "template" || page === "font";
+  const unconfirmedFont = () => page === "font" && editingRecord.unconfirmed === true;
   const simplified = () => page === "font" && !sameShape(editingRecord.template, templateFields());
   function editorState() {
     if (page === "template") return { name: nameInput.value.trim(), ...templateFields() };
@@ -151,14 +155,21 @@
     const wrapper = element("div", "desktop-card-slot");
     const remove = element("button", "desktop-delete");
     remove.type = "button";
-    const label = `删除${kind === "template" ? "模板" : "字体"}「${record.name}」`;
+    const isTemplate = kind === "template";
+    const label = `删除${isTemplate ? "模板" : "字体"}「${record.name}」`;
     remove.title = label;
     remove.setAttribute("aria-label", label);
     remove.append(icon("desktop-trash-icon"));
     remove.addEventListener("click", () => run(async () => {
-      if (!await desktop.deleteProject(kind, record.id)) return;
-      const records = kind === "template" ? templates : fonts;
-      records.delete(record.id);
+      $("desktop-delete-title").textContent = label + "？";
+      $("desktop-delete-detail").textContent = isTemplate ?
+        "保留的字体会继续使用各自内嵌的模板。" : "该字体及其字形将被删除。";
+      $("desktop-delete-linked-label").hidden = !isTemplate;
+      const option = $("desktop-delete-linked");
+      option.checked = false;
+      if (await showDialog("desktop-delete-dialog") !== "delete") return;
+      await desktop.deleteProject(kind, record.id, isTemplate && option.checked);
+      await reload();
       showMenu(page);
       studio.notify(`已${label}。`);
       requestAnimationFrame(() => {
@@ -167,6 +178,15 @@
     }));
     wrapper.append(card(record.name, status, image, open, className), remove);
     return wrapper;
+  }
+
+  function showDialog(id) {
+    const dialog = $(id);
+    dialog.returnValue = "";
+    dialog.showModal();
+    return new Promise(resolve => {
+      dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true });
+    });
   }
 
   function setPage(next) {
@@ -238,15 +258,44 @@
     }
   }
 
+  function renderSetupPreview() {
+    if (page !== "setup") return;
+    $("desktop-setup-preview-name").textContent = setupName.value.trim();
+    const fields = dimensions.map($);
+    const valid = fields.every(field => field.validity.valid);
+    setupCanvas.toggleAttribute("hidden", !valid);
+    $("desktop-setup-preview-empty").hidden = valid;
+    if (!valid) return;
+    const [width, height, stepX, stepY] = fields.map(field => field.valueAsNumber);
+    const margin = Math.max(width, height) * .025;
+    const viewWidth = width + 2 * margin;
+    const viewHeight = height + 2 * margin;
+    setupCanvas.setAttribute("viewBox", `${-margin} ${-margin} ${viewWidth} ${viewHeight}`);
+    const paper = $("desktop-setup-preview-paper");
+    paper.setAttribute("width", width);
+    paper.setAttribute("height", height);
+    const bounds = setupCanvas.getBoundingClientRect();
+    const scale = Math.min(bounds.width / viewWidth, bounds.height / viewHeight);
+    // Keep each visible line on the actual grid even when the preview is too small to show every line.
+    const interval = step => step * Math.max(1, Math.ceil(3 / (step * scale)));
+    const xInterval = interval(stepX);
+    const yInterval = interval(stepY);
+    const lines = [];
+    for (let x = xInterval; x < width; x += xInterval) lines.push(`M${x} 0V${height}`);
+    for (let y = yInterval; y < height; y += yInterval) lines.push(`M0 ${y}H${width}`);
+    $("desktop-setup-preview-grid").setAttribute("d", lines.join(""));
+  }
+
   function openTemplateSetup() {
     const draft = studio.blankDraft();
-    $("desktop-setup-name").value = "";
-    for (const key of ["width", "height", "stepX", "stepY"]) $(key).value = draft[key];
+    setupName.value = "";
+    for (const key of dimensions) $(key).value = draft[key];
     setPage("setup");
+    renderSetupPreview();
   }
 
   async function createTemplate(dimensions) {
-    const name = $("desktop-setup-name").value.trim();
+    const name = setupName.value.trim();
     if (!name) throw new Error("请输入模板名称。");
     const spec = studio.validateSpec({ ...dimensions, strokes: [] });
     const template = await desktop.saveTemplate({ name, spec, disabledRegions: [] });
@@ -287,7 +336,9 @@
     const status = $("desktop-save-status");
     const unsaved = dirty();
     status.classList.toggle("dirty", unsaved);
-    status.textContent = saving ? "正在保存…" : !unsaved ? "已保存" : saveFailed ? "保存失败" : "等待自动保存";
+    if (saving) status.textContent = "正在保存…";
+    else if (unsaved) status.textContent = saveFailed ? "保存失败" : "等待自动保存";
+    else status.textContent = unconfirmedFont() ? "草稿已保存" : "已保存";
     if (page === "font") $("desktop-font-title").textContent = project().fontName;
   }
 
@@ -339,6 +390,34 @@
     document.activeElement?.blur();
     clearTimeout(autoSaveTimer);
     while (saving || dirty()) await save();
+  }
+
+  async function saveManually() {
+    await flushSave();
+    if (unconfirmedFont()) {
+      editingRecord = await desktop.confirmFont(editingRecord.id);
+      fonts.set(editingRecord.id, editingRecord);
+      updateSaveStatus();
+    }
+  }
+
+  async function prepareToLeave() {
+    if (!unconfirmedFont()) {
+      await flushSave();
+      return true;
+    }
+    $("desktop-retain-detail").textContent = `要保留尚未手动保存的字体「${project().fontName}」吗？`;
+    const answer = await showDialog("desktop-retain-font");
+    if (answer === "keep") await saveManually();
+    else if (answer === "discard") {
+      // Let an in-flight write finish before removing the draft.
+      await saving?.catch(() => {});
+      clearTimeout(autoSaveTimer);
+      await desktop.deleteProject("font", editingRecord.id);
+      fonts.delete(editingRecord.id);
+      showMenu("fonts");
+    } else return false;
+    return true;
   }
 
   async function createFont() {
@@ -537,7 +616,7 @@
     action.addEventListener("click", () => {
       if (phase === "available") desktop.downloadUpdate().catch(report);
       else if (phase === "ready" && !busy) {
-        run(async () => { await flushSave(); return true; }).then(saved => {
+        run(prepareToLeave).then(saved => {
           if (saved) return desktop.installUpdate();
         }).catch(report);
       }
@@ -557,6 +636,14 @@
     $("simplify-template").textContent = "简化为独立模板";
     $("desktop-setup-fields").append($("dimensions"));
     $("apply-dimensions").textContent = "创建并编辑";
+    $("desktop-setup-fields").addEventListener("input", renderSetupPreview);
+    new ResizeObserver(renderSetupPreview).observe(setupCanvas.parentElement);
+    const undo = $("undo");
+    undo.className = "button";
+    $("desktop-export-project").before(undo);
+    for (const id of ["desktop-delete-dialog", "desktop-retain-font"]) {
+      $(id).addEventListener("keydown", event => event.stopPropagation());
+    }
     $("desktop-template-identity").hidden = false;
     $("tools").querySelector("[data-tool=exclude]").removeAttribute("title");
     initializeSampleScroll();
@@ -566,11 +653,11 @@
       markChanged();
     });
     $("desktop-setup-back").addEventListener("click", () => run(() => showMenu("templates")));
-    $("desktop-save").addEventListener("click", () => run(flushSave));
+    $("desktop-save").addEventListener("click", () => run(saveManually));
     $("desktop-export-project").addEventListener("click", () => run(() => exportProject()));
     $("desktop-editor-back").addEventListener("click", () => run(async () => {
       const next = page === "template" ? "templates" : "fonts";
-      await flushSave();
+      if (!await prepareToLeave()) return;
       await reload();
       showMenu(next);
     }));
@@ -598,17 +685,22 @@
       if (closing) return;
       closing = true;
       await activeAction?.catch(() => {});
-      const saved = await run(async () => { await flushSave(); return true; });
-      if (saved || window.confirm("自动保存失败。要放弃未保存的修改并退出吗？")) {
-        allowUnload = true;
-        await desktop.controlWindow("close");
+      try {
+        const saved = await run(prepareToLeave);
+        if (saved || (saved === undefined && !unconfirmedFont() &&
+            window.confirm("自动保存失败。要放弃未保存的修改并退出吗？"))) {
+          allowUnload = true;
+          await desktop.controlWindow("close");
+        }
+      } finally {
+        allowUnload = false;
+        closing = false;
       }
-      closing = false;
     });
     window.addEventListener("beforeunload", event => {
       if (allowUnload) return;
       document.activeElement?.blur();
-      if (busy || saving || dirty()) {
+      if (busy || saving || dirty() || unconfirmedFont()) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -616,7 +708,7 @@
     document.addEventListener("keydown", event => {
       if (!editing() || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
       event.preventDefault();
-      run(flushSave);
+      run(saveManually);
     });
     return run(async () => {
       try {

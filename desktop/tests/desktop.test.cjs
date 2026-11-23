@@ -49,6 +49,40 @@ test("deleting a template preserves every linked font and its editable snapshot"
   await assert.rejects(reopened.deleteFont("../example"), /项目标识无效/);
 });
 
+test("deleting a template with its linked fonts leaves unrelated projects intact", async t => {
+  const projects = createProjects(await temporary(t));
+  const spec = { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] };
+  const template = await projects.saveTemplate({ name: "Template", spec, disabledRegions: [] });
+  const other = await projects.saveTemplate({ name: "Template", spec, disabledRegions: [] });
+  await projects.createFont(template.id);
+  await projects.createFont(template.id);
+  const unrelated = await projects.createFont(other.id);
+  await projects.saveTemplate({ ...template, spec: { ...spec, stepX: 30 } });
+
+  await projects.deleteTemplate(template.id, true);
+  assert.deepEqual(await projects.load(), { templates: [other], fonts: [unrelated], warnings: [] });
+});
+
+test("font autosaves preserve the draft across reopening until explicit confirmation", async t => {
+  const root = await temporary(t);
+  const projects = createProjects(root);
+  const spec = { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] };
+  const template = await projects.saveTemplate({ name: "Grid", spec, disabledRegions: [] });
+  const font = await projects.createFont(template.id);
+  assert.equal(font.unconfirmed, true);
+  await projects.saveFont(font.id, { ...font, sample: "AB", unconfirmed: false });
+
+  const reopened = createProjects(root);
+  const [draft] = (await reopened.load()).fonts;
+  assert.equal(draft.unconfirmed, true);
+  assert.equal(draft.sample, "AB");
+  const confirmed = await reopened.confirmFont(font.id);
+  assert.equal(confirmed.unconfirmed, undefined);
+  const { font: saved } = await reopened.saveFont(font.id, { ...draft, glyphs: { A: [0] } });
+  assert.equal(saved.unconfirmed, undefined);
+  assert.deepEqual(saved.glyphs, { A: [0] });
+});
+
 test("only a newer stable release with a verifiable Windows archive is eligible", () => {
   const asset = { name: "GlyphCut-Windows-x64.zip", state: "uploaded", size: 100, digest: "sha256:" + "a".repeat(64) };
   const release = { tag_name: "v1.10.0", assets: [asset] };

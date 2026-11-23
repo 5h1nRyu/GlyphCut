@@ -521,10 +521,11 @@
   }
 
   function updateHelp() {
-    let help = cursorHelp[tool];
+    let help = workspace && tool === "line" ? "" : cursorHelp[tool];
     if (pending?.b) help = "点击或拖动控制点，自动吸附。右键取消终点。";
     else if (pending) help = "起点已选。点击终点，或右键取消起点。";
     $("tool-help").textContent = help;
+    $("tool-help").hidden = !help;
   }
 
   function renderSample() {
@@ -598,9 +599,10 @@
       explanation.classList.toggle("warning", unused > 0);
       explanation.textContent = geometry ?
         (unused ? `${unused} 条线有部分未形成分区，以虚线标出。` :
-          workspace ? "区块已生成，可使用此模板创建字体。" : "区块已生成，可进入字形设计。") :
+          workspace ? "" : "区块已生成，可进入字形设计。") :
         (project.template ? "线条已修改，重新生成可预览新的分区。" : "绘制分割线后生成区块。");
       if (confirmed && project.disabledRegions.length) explanation.textContent += `已禁用 ${project.disabledRegions.length} 个区块。`;
+      explanation.hidden = !explanation.textContent;
       $("use-template").disabled = !confirmed;
       $("generate").disabled = Boolean(confirmed);
       $("clear-template").disabled = !project.draft.strokes.length;

@@ -58,28 +58,17 @@ function registerFiles() {
   });
 
   projects = createProjects(join(app.getPath("userData"), "workspace"));
-  for (const method of ["load", "saveTemplate", "createFont", "saveFont", "adaptFont", "keepTemplate"]) {
+  for (const method of ["load", "saveTemplate", "createFont", "saveFont", "confirmFont", "adaptFont", "keepTemplate"]) {
     ipcMain.handle(`project:${method}`, (event, ...args) => {
       trustedWindow(event);
       return projects[method](...args);
     });
   }
-  ipcMain.handle("project:delete", async (event, kind, id) => {
-    const window = trustedWindow(event);
-    const isTemplate = kind === "template";
-    if (!isTemplate && kind !== "font") throw new Error("项目类型无效。");
-    const data = await projects.load();
-    const record = (isTemplate ? data.templates : data.fonts).find(item => item.id === id);
-    if (!record) return false;
-    const label = isTemplate ? "模板" : "字体";
-    const { response } = await dialog.showMessageBox(window, {
-      type: "warning", title: "字形切片", message: `删除${label}「${record.name}」？`,
-      detail: isTemplate ? "关联字体会继续使用各自内嵌的模板。" : "该字体及其字形将被删除。",
-      buttons: ["取消", "删除"], defaultId: 0, cancelId: 0, noLink: true
-    });
-    if (response !== 1) return false;
-    await projects[isTemplate ? "deleteTemplate" : "deleteFont"](id);
-    return true;
+  ipcMain.handle("project:delete", (event, kind, id, linked) => {
+    trustedWindow(event);
+    if (kind === "template") return projects.deleteTemplate(id, linked);
+    if (kind === "font") return projects.deleteFont(id);
+    throw new Error("项目类型无效。");
   });
   updates = createUpdater({
     version: app.getVersion(), executable: process.execPath,
