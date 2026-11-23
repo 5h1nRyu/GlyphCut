@@ -18,6 +18,43 @@ const versionPattern = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/;
 const downloadHosts = new Set(["github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"]);
 const headers = { "User-Agent": "GlyphCut-Desktop" };
 
+function createUpdateRequest(network) {
+  return (target, { signal, redirect, headers }) => {
+    signal?.throwIfAborted();
+    return new Promise((resolve, reject) => {
+      const request = network.request({
+        url: String(target), redirect, headers, credentials: "omit", cache: "no-store"
+      });
+      const clearAbort = () => signal?.removeEventListener("abort", abort);
+      const abort = () => {
+        clearAbort();
+        request.abort();
+        reject(signal.reason);
+      };
+      signal?.addEventListener("abort", abort, { once: true });
+      request.on("error", error => {
+        clearAbort();
+        reject(error);
+      });
+      // Return the redirect to fetchArchive so it can validate the destination before connecting.
+      request.once("redirect", (status, _method, location) => {
+        clearAbort();
+        resolve(new Response(null, { status, headers: { location } }));
+        request.abort();
+      });
+      request.once("response", response => {
+        response.once("close", clearAbort);
+        const status = response.statusCode;
+        const empty = [204, 205, 304].includes(status);
+        const body = empty ? null : Readable.toWeb(response);
+        if (empty) response.resume();
+        resolve(new Response(body, { status }));
+      });
+      request.end();
+    });
+  };
+}
+
 function findUpdate(data, current) {
   if (!data || data.draft || data.prerelease) return null;
   const tag = data.tag_name;
@@ -52,7 +89,8 @@ async function fetchArchive(request, release, target, signal, report) {
   }
   if (!response?.ok || !response.body) {
     await response?.body?.cancel().catch(() => {});
-    throw new Error("更新下载失败，请检查网络后重试。");
+    const status = response?.status ? `（HTTP ${response.status}）` : "";
+    throw new Error(`更新下载失败${status}，请检查网络或系统代理后重试。`);
   }
 
   const hash = createHash("sha256");
@@ -70,6 +108,11 @@ async function fetchArchive(request, release, target, signal, report) {
   if (received !== release.size || hash.digest("hex") !== release.digest) {
     throw new Error("更新包校验失败，请重新下载。");
   }
+}
+
+function networkErrorCode(error) {
+  const code = error.message.match(/\bERR_[A-Z0-9_]+\b/)?.[0];
+  return code ? `（${code}）` : "";
 }
 
 function createUpdater({ version, executable, notify, request = fetch, supported =
@@ -111,7 +154,9 @@ function createUpdater({ version, executable, notify, request = fetch, supported
       release = findUpdate(await response.json(), version);
       return publish(release ? "available" : "current");
     } catch (error) {
-      return publish("checkFailed", { message: error.message.includes("最新版缺少") ? error.message : "无法检查更新，请检查网络后重试。" });
+      const code = networkErrorCode(error);
+      return publish("checkFailed", { message: error.message.includes("最新版缺少") ? error.message :
+        `无法检查更新${code}，请检查网络或系统代理后重试。` });
     }
   }
 
@@ -133,10 +178,11 @@ function createUpdater({ version, executable, notify, request = fetch, supported
     } catch (error) {
       if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => {});
       workDir = undefined;
+      const code = networkErrorCode(error);
       const message = state.phase === "preparing" ? "更新包解压或版本校验失败。" :
-        typeof error.code === "string" && ["EACCES", "EPERM", "EROFS"].includes(error.code)
-          ? "程序目录不可写。请将免安装版放在可写目录中。" :
-          error.message.startsWith("更新") ? error.message : "下载更新失败，请检查网络和磁盘空间后重试。";
+        ["EACCES", "EPERM", "EROFS"].includes(error.code) ? "程序目录不可写。请将免安装版放在可写目录中。" :
+        error.code === "ENOSPC" ? "磁盘空间不足，请释放空间后重试。" :
+        error.message.startsWith("更新") ? error.message : `下载更新失败${code}，请检查网络或系统代理后重试。`;
       return publish("available", { message });
     } finally {
       downloadAbort = undefined;
@@ -178,4 +224,4 @@ function createUpdater({ version, executable, notify, request = fetch, supported
   };
 }
 
-module.exports = { createUpdater, findUpdate, fetchArchive };
+module.exports = { createUpdater, createUpdateRequest, findUpdate, fetchArchive };

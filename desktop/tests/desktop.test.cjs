@@ -2,12 +2,14 @@
 
 const assert = require("node:assert/strict");
 const { createHash } = require("node:crypto");
+const { EventEmitter } = require("node:events");
 const { mkdtemp, readFile, rm } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
+const { Readable } = require("node:stream");
 const { test } = require("node:test");
 const { createProjects } = require("../projects.cjs");
-const { fetchArchive, findUpdate } = require("../updates.cjs");
+const { createUpdateRequest, fetchArchive, findUpdate } = require("../updates.cjs");
 
 async function temporary(t) {
   const folder = await mkdtemp(join(tmpdir(), "glyphcut-test-"));
@@ -78,4 +80,35 @@ test("update downloads verify size and digest and refuse redirects outside GitHu
     signal, () => {}), /大小与发布信息不一致/);
   await assert.rejects(fetchArchive(async () => Response.redirect("https://example.com/archive.zip"), release,
     join(directory, "external.zip"), signal, () => {}), /下载地址无效/);
+});
+
+
+test("Electron transport returns each redirect to the updater and streams the verified archive", async t => {
+  const directory = await temporary(t);
+  const start = "https://github.com/5h1nRyu/GlyphCut/releases/download/v1.1.2/GlyphCut-Windows-x64.zip";
+  const target = "https://release-assets.githubusercontent.com/test";
+  const requests = [];
+  const payload = Buffer.from("release archive fixture");
+  let canceledRedirect = false;
+  const request = createUpdateRequest({
+    request(options) {
+      const connection = new EventEmitter();
+      requests.push(options);
+      connection.abort = () => { canceledRedirect = true; };
+      connection.end = () => {
+        if (options.url === start) connection.emit("redirect", 302, "GET", target);
+        else connection.emit("response", Object.assign(Readable.from([payload]), { statusCode: 200 }));
+      };
+      return connection;
+    }
+  });
+  const archive = join(directory, "update.zip");
+  await fetchArchive(request, {
+    url: start, size: payload.length, digest: createHash("sha256").update(payload).digest("hex")
+  }, archive, AbortSignal.timeout(1000), () => {});
+  assert.ok(canceledRedirect);
+  assert.deepEqual(requests.map(options => options.url), [start, target]);
+  assert.ok(requests.every(options =>
+    options.redirect === "manual" && options.cache === "no-store" && options.credentials === "omit"));
+  assert.deepEqual(await readFile(archive), payload);
 });

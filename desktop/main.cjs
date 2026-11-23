@@ -1,10 +1,10 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, ipcMain, protocol } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, net, protocol } = require("electron");
 const { readFile, unlink, writeFile } = require("node:fs/promises");
 const { basename, dirname, extname, join } = require("node:path");
 const { createProjects } = require("./projects.cjs");
-const { createUpdater } = require("./updates.cjs");
+const { createUpdater, createUpdateRequest } = require("./updates.cjs");
 
 const page = "glyph-cut://studio/index.html";
 const files = new Map([
@@ -83,6 +83,7 @@ function registerFiles() {
   });
   updates = createUpdater({
     version: app.getVersion(), executable: process.execPath,
+    request: createUpdateRequest(net),
     notify: state => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("update:state", state);
     }
