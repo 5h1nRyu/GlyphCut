@@ -45,8 +45,10 @@
     return { name: p.fontName.trim(), glyphs: p.glyphs, baseline: p.baseline, spacing: p.spacing,
       sample: p.sample, autoSample: p.autoSample, characterGroups: p.characterGroups, character: p.character };
   };
-  const sampleText = font => font.autoSample ?
-    [...alphabet].filter(ch => font.glyphs[ch]?.length).slice(0, 3).join("") : font.sample;
+  function sampleText(font) {
+    const characters = [...(font.autoSample ? alphabet : font.sample)].filter(ch => font.glyphs[ch]?.length);
+    return (font.autoSample ? characters.slice(0, 3) : characters).join("");
+  }
   const editing = () => page === "template" || page === "font";
   const unconfirmedFont = () => page === "font" && editingRecord.unconfirmed === true;
   function editorState() {
@@ -118,37 +120,19 @@
   }
 
   function fontArt(font) {
-    const sample = sampleText(font).trim();
+    const sample = sampleText(font).slice(0, 7);
     const spec = font.template.spec;
     const svg = art(spec);
     if (!sample) return svg;
-    svg.classList.add("desktop-font-sample");
     const geometry = studio.geometry(spec);
     const advance = spec.width + 2 * font.spacing;
     let offset = 0;
-    let count = 0;
     for (const character of sample) {
-      if (count === 7) break;
-      if (character === " ") {
-        offset += advance / 2;
-        continue;
-      }
-      const ids = font.glyphs[character];
-      if (ids?.length) {
-        const glyph = document.createElementNS(svgNS, "g");
-        glyph.setAttribute("transform", `translate(${offset + font.spacing} 0)`);
-        addPath(glyph, glyphPath(geometry, ids), "", "currentColor");
-        svg.append(glyph);
-      } else {
-        const placeholder = document.createElementNS(svgNS, "text");
-        placeholder.setAttribute("x", String(offset + advance / 2));
-        placeholder.setAttribute("y", String(spec.height / 2));
-        placeholder.setAttribute("font-size", String(Math.min(spec.height * 0.65, advance)));
-        placeholder.textContent = character;
-        svg.append(placeholder);
-      }
+      const glyph = document.createElementNS(svgNS, "g");
+      glyph.setAttribute("transform", `translate(${offset + font.spacing} 0)`);
+      addPath(glyph, glyphPath(geometry, font.glyphs[character]), "", "currentColor");
+      svg.append(glyph);
       offset += advance;
-      count++;
     }
     svg.setAttribute("viewBox", `0 0 ${offset} ${spec.height}`);
     return svg;
@@ -395,7 +379,7 @@
     showMenu(next);
     menu.prepend(outgoing);
     outgoing.scrollTop = scrollTop;
-    const options = { duration: 250, easing: "cubic-bezier(.22,.75,.28,1)" };
+    const options = { duration: 500, easing: "cubic-bezier(.22,.75,.28,1)" };
     const departing = outgoing.animate({ transform: ["translateX(0)", `translateX(${-direction * 100}%)`] }, options);
     const arriving = content.animate({ transform: [`translateX(${direction * 100}%)`, "translateX(0)"] }, options);
     try {
@@ -802,6 +786,7 @@
     fill.classList.add("split");
     fill.before(settings);
     const actions = element("section", "desktop-glyph-actions");
+    $("clear-glyph").classList.replace("clear", "danger");
     actions.append($("simplify-template"), $("clear-glyph"));
     fill.after(actions);
 

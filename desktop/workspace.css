@@ -9,6 +9,7 @@
 .desktop-app #glyph-controls .help:not(#point-fill-status),
 .desktop-app #canvas-settings,
 .desktop-app #generate,
+.desktop-app .example-section,
 .desktop-app:not(.desktop-editing) .workbench { display: none; }
 .desktop-app .spacing-setting { grid-column: 1 / -1; }
 .desktop-app .workbench {
@@ -39,7 +40,7 @@
   height: auto;
   min-height: 100%;
 }
-.desktop-template-editing .right .split { padding-top: 12px; border-top: 1px solid #e6eaf0; }
+.desktop-template-editing #use-template { white-space: nowrap; }
 .desktop-font-editing { overflow: hidden; }
 .desktop-font-editing .workbench {
   height: calc(100dvh - var(--desktop-title-height) - var(--desktop-editor-height));
@@ -62,6 +63,13 @@
   gap: 14px;
 }
 .desktop-font-editing #glyph-controls { gap: 10px; }
+.desktop-font-editing #glyph-preview > :first-child {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.desktop-font-editing #glyph-preview > .split { flex: none; }
 .desktop-font-editing #glyph-controls .split,
 .desktop-font-editing #glyph-preview .split { padding-top: 12px; border-top: 1px solid #e6eaf0; }
 .desktop-font-editing #font-settings .fields { margin: 9px 0 0; gap: 8px; }
@@ -69,12 +77,13 @@
 .desktop-font-editing #glyph-tools { margin: 9px 0 0; }
 .desktop-font-editing #point-fill-status { margin-top: 6px; }
 .desktop-font-editing #point-fill-controls .stack { margin-top: 6px; }
-.desktop-glyph-actions { display: grid; gap: 6px; }
+.desktop-glyph-actions { display: grid; gap: 6px; margin-top: auto; }
 .desktop-glyph-actions #clear-glyph { margin: 0; }
 .desktop-font-editing #cycle-point-connection,
 .desktop-glyph-actions .button { min-height: 33px; padding-block: 4px; }
 .desktop-font-editing #characters {
-  height: 146px;
+  flex: 1;
+  min-height: 0;
   padding: 3px;
   grid-auto-rows: 32px;
   align-content: start;
@@ -92,7 +101,6 @@
 #desktop-template-name { margin-top: 12px; }
 .desktop-app .sample-output { overflow: hidden; scrollbar-width: none; }
 .desktop-app .sample-output::-webkit-scrollbar { display: none; }
-.desktop-app .sample-output .empty { flex: none; }
 
 .desktop-titlebar {
   position: sticky;
@@ -257,13 +265,6 @@
   border-bottom: 1px solid #e4e9f0;
 }
 .desktop-card-visual .desktop-art { width: 100%; height: 96px; stroke: none; }
-.desktop-font-sample text {
-  fill: currentColor;
-  opacity: .45;
-  font-family: var(--mono);
-  text-anchor: middle;
-  dominant-baseline: central;
-}
 .desktop-art .template-line { stroke: #5e7088; stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 .desktop-art .template-disabled { fill: #c9d1df; }
 .desktop-card-caption { display: grid; gap: 3px; width: 100%; padding: 13px 14px; }
@@ -390,8 +391,11 @@
 .desktop-project-note { color: var(--muted); font-size: .875rem; }
 .desktop-font-scope .desktop-project-note { margin: 0; }
 .desktop-project-error { color: #a02536; font-size: .875rem; }
-.desktop-dialog .button.danger { color: #fff; background: #a53041; border-color: #a53041; }
-.desktop-dialog .button.danger:hover { background: #862332; border-color: #862332; }
+:is(.desktop-dialog, .desktop-glyph-actions) .button.danger { color: #fff; background: #a53041; border-color: #a53041; }
+:is(.desktop-dialog, .desktop-glyph-actions) .button.danger:hover:not(:disabled) {
+  background: #862332;
+  border-color: #862332;
+}
 .desktop-export-options { display: grid; gap: 8px; margin-top: 16px; }
 .desktop-export-options .button { justify-content: flex-start; }
 .desktop-update-dialog progress { width: 100%; accent-color: #52800b; }

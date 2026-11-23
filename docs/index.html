@@ -72,7 +72,7 @@
           <button class="tool" data-tool="erase" type="button"><svg><use href="#i-erase"/></svg><span>删除</span><kbd>E</kbd></button>
           <button class="tool" data-tool="exclude" type="button" title="生成模板后可禁用区块" disabled><svg><use href="#i-exclude"/></svg><span>禁用区块</span><kbd>X</kbd></button>
         </div>
-        <p class="help" id="tool-help"></p>
+        <p class="help" id="tool-help" hidden></p>
         <dl id="curve-definition" class="curve-definition" aria-label="曲线定义点" hidden>
           <div><dt><span>起点</span></dt><dd id="curve-point-a"></dd></div>
           <div><dt><span>控制点</span></dt><dd id="curve-point-c"></dd></div>
@@ -93,7 +93,7 @@
         </div>
         <p class="help" id="region-fill-help">点击区块切换填充，按住拖动可连续填充经过的区块。</p>
         <div id="point-fill-controls" hidden>
-          <p class="help">沿模板连线选点。连线后，点击由连线与画布外框划出的分区，可填满或清空。滚轮切换最后一段，右键撤回上一个点。</p>
+          <p class="help">沿模板连线选点。回到起点闭合后，点击分区可填满或清空。滚轮切换最后一段，右键撤回上一个点。</p>
           <p class="help" id="point-fill-status" aria-live="polite" hidden></p>
           <div class="stack">
             <button class="button clear block" id="cycle-point-connection" type="button" hidden>切换连线</button>

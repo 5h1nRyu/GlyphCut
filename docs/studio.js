@@ -431,15 +431,15 @@
 
     const last = outlineSteps.at(-1);
     const status = $("point-fill-status");
-    const details = [];
-    if (last?.options.length > 1) {
+    const hasAlternatives = last?.options.length > 1;
+    if (hasAlternatives) {
       const type = chosenConnection(last)[0].c ? "曲线" : "直线";
-      details.push(`最后一段 ${type} ${last.index + 1}/${last.options.length}`);
+      status.textContent = `最后一段 ${type} ${last.index + 1}/${last.options.length}`;
+    } else {
+      status.textContent = "";
     }
-    if (closed) details.push("轮廓已闭合。");
-    status.textContent = details.join(" · ");
-    status.hidden = !details.length;
-    $("cycle-point-connection").hidden = !(last?.options.length > 1);
+    status.hidden = !hasAlternatives;
+    $("cycle-point-connection").hidden = !hasAlternatives;
   }
 
   function renderBoard() {
@@ -529,7 +529,8 @@
   }
 
   function updateHelp() {
-    let help = workspace && tool === "line" ? "" : cursorHelp[tool];
+    if (workspace) return;
+    let help = cursorHelp[tool];
     if (pending?.b) help = "点击或拖动控制点，自动吸附。右键取消终点。";
     else if (pending) help = "起点已选。点击终点，或右键取消起点。";
     $("tool-help").textContent = help;
@@ -685,7 +686,7 @@
   function refreshOutline() {
     const geometry = getGeometry(project.template);
     const disabled = new Set(project.disabledRegions);
-    pointRegions = outlineSteps.length ? G.partitionByPath(geometry, outlineSteps.flatMap(chosenConnection)).map(ids => ({
+    pointRegions = outlineClosed() ? G.partitionByPath(geometry, outlineSteps.flatMap(chosenConnection)).map(ids => ({
       path: G.path(G.trace(geometry, new Set(ids))),
       ids: ids.filter(id => !disabled.has(id))
     })) : [];

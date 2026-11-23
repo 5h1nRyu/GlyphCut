@@ -122,7 +122,7 @@ function createWindow() {
     title: "字形切片",
     width: 990,
     height: 671,
-    minWidth: 760,
+    minWidth: 850,
     minHeight: 600,
     frame: false,
     backgroundColor: "#edf0f5",
