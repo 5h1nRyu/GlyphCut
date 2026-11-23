@@ -93,7 +93,7 @@ async function requestReleaseAsset(request, address, signal) {
 }
 
 async function readUpdateManifest(request) {
-  const response = await requestReleaseAsset(request, latestManifest, AbortSignal.timeout(8000));
+  const response = await requestReleaseAsset(request, latestManifest, AbortSignal.timeout(30000));
   if (!response.ok || !response.body) {
     await response.body?.cancel().catch(() => {});
     throw new Error("无法读取更新清单。");
