@@ -193,6 +193,7 @@ if (app.requestSingleInstanceLock()) {
     createWindow();
   });
   app.on("window-all-closed", () => app.quit());
+  app.on("will-quit", () => updates?.approveInstall());
   app.on("quit", () => updates?.stop());
   app.on("before-quit", event => {
     const write = projects?.pending();

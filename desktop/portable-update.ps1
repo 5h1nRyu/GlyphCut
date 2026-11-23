@@ -85,15 +85,16 @@ if ($Update.mode -eq 'stage') {
 }
 if ($Update.mode -ne 'apply') { throw 'Unknown update phase.' }
 
+$handoff = if ($Update.handoff) { $Update.handoff } else { $work }
 try {
     $newFiles = @(Read-PackageFiles $incoming)
     $oldFiles = @(Read-PackageFiles $install)
     $running = Get-Process -Id $Update.pid -ErrorAction SilentlyContinue
     # Open the process handle while the original program is still alive.
     if ($running) { [void]$running.Handle }
-    [IO.File]::WriteAllText((Join-Path $work 'installer-ready'), '')
+    [IO.File]::WriteAllText((Join-Path $handoff 'installer-ready'), '')
 } catch {
-    [IO.File]::WriteAllText((Join-Path $work 'install-error.txt'), "更新助手启动失败。$_")
+    [IO.File]::WriteAllText((Join-Path $handoff 'install-error.txt'), "更新助手启动失败。$_")
     exit 2
 }
 
@@ -103,10 +104,15 @@ $movedOld = [Collections.Generic.List[string]]::new()
 $movedNew = [Collections.Generic.List[string]]::new()
 $reopened = $null
 try {
-    if ($running -and -not $running.WaitForExit(120000)) {
-        [IO.File]::WriteAllText((Join-Path $install '.glyphcut-update-error.txt'), '程序退出超时。请退出程序后重新更新。')
-        exit 2
+    $deadline = [DateTime]::UtcNow.AddMinutes(2)
+    while ($running -and -not $running.WaitForExit(250)) {
+        if (Test-Path -LiteralPath (Join-Path $handoff 'canceled')) { exit 0 }
+        if ([DateTime]::UtcNow -ge $deadline) {
+            [IO.File]::WriteAllText((Join-Path $install '.glyphcut-update-error.txt'), '程序退出超时。请退出程序后重新更新。')
+            exit 2
+        }
     }
+    if ($Update.handoff -and -not (Test-Path -LiteralPath (Join-Path $handoff 'approved'))) { exit 0 }
     [IO.Directory]::CreateDirectory($backup) | Out-Null
     foreach ($name in $oldFiles) {
         $current = Join-Path $install $name

@@ -3,8 +3,8 @@
 const { spawn, execFile } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const { once } = require("node:events");
-const { createWriteStream, existsSync, rmSync } = require("node:fs");
-const { mkdtemp, readFile, rm } = require("node:fs/promises");
+const { createWriteStream, existsSync, rmSync, writeFileSync } = require("node:fs");
+const { mkdtemp, readFile, rm, writeFile } = require("node:fs/promises");
 const { basename, dirname, join } = require("node:path");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
@@ -134,14 +134,19 @@ function createUpdater({ version, executable, notify, request = fetch, supported
     return state;
   }
 
-  async function argumentsFor(mode) {
-    // Encode parameters separately so paths never become PowerShell source.
-    const params = Buffer.from(JSON.stringify({
-      mode, installDir, workDir, version: release.version, digest: release.digest, pid: process.pid
-    })).toString("base64");
+  function powershellArguments(script, parameters) {
+    // Keep native paths out of PowerShell source.
+    const params = Buffer.from(JSON.stringify(parameters)).toString("base64");
+    const prefix = `$Update = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${params}')) | ConvertFrom-Json`;
+    return ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+      Buffer.from(`${prefix}\n${script}`, "utf16le").toString("base64")];
+  }
+
+  async function argumentsFor(mode, handoff) {
     const source = await readFile(join(__dirname, "portable-update.ps1"), "utf8");
-    const script = `$Update = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${params}')) | ConvertFrom-Json\n${source}`;
-    return ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")];
+    return powershellArguments(source, {
+      mode, installDir, workDir, handoff, version: release.version, digest: release.digest, pid: process.pid
+    });
   }
 
   async function check() {
@@ -198,28 +203,44 @@ function createUpdater({ version, executable, notify, request = fetch, supported
   async function install() {
     if (state.phase !== "ready") return false;
     publish("installing");
+    let attempt;
     try {
-      const ready = join(workDir, "installer-ready");
-      await Promise.all(["installer-ready", "install-error.txt"].map(name =>
-        rm(join(workDir, name), { force: true })));
-      // The helper must have a working directory outside the files it moves or removes.
-      installer = spawn(powershell, await argumentsFor("apply"), {
-        detached: true, windowsHide: true, stdio: "ignore", cwd: installDir
-      });
-      await once(installer, "spawn");
+      attempt = { path: await mkdtemp(join(workDir, "handoff-")), ready: false };
+      installer = attempt;
+      const command = join(attempt.path, "command.txt");
+      const failure = join(attempt.path, "install-error.txt");
+      const ready = join(attempt.path, "installer-ready");
+      await writeFile(command, (await argumentsFor("apply", attempt.path)).join(" "));
+      // A detached Windows PowerShell can exit before running the script. A normal
+      // hidden launcher starts the installer independently of Electron's child job.
+      const launcher = spawn(powershell, powershellArguments(`
+        $ErrorActionPreference = 'Stop'
+        try {
+          $start = [Diagnostics.ProcessStartInfo]::new()
+          $start.FileName = $Update.executable
+          $start.WorkingDirectory = $Update.installDir
+          $start.Arguments = [IO.File]::ReadAllText($Update.command)
+          $start.UseShellExecute = $false
+          $start.CreateNoWindow = $true
+          [Diagnostics.Process]::Start($start).Dispose()
+        } catch {
+          [IO.File]::WriteAllText($Update.failure, $_.Exception.Message)
+          exit 1
+        }`, { executable: powershell, installDir, command, failure }),
+      { windowsHide: true, stdio: "ignore", cwd: installDir });
+      await once(launcher, "spawn");
       const deadline = Date.now() + 15000;
-      while (!existsSync(ready) && installer.exitCode === null && Date.now() < deadline) {
+      while (installer === attempt && !existsSync(ready) && !existsSync(failure) &&
+             (launcher.exitCode === null || launcher.exitCode === 0) && Date.now() < deadline) {
         await delay(100);
       }
-      if (!existsSync(ready) || installer.exitCode !== null) {
-        throw new Error("Windows 更新助手未就绪。");
-      }
-      installer.unref();
+      if (installer !== attempt) return false;
+      if (!existsSync(ready)) throw new Error("Windows 更新助手未就绪。");
+      attempt.ready = true;
       return true;
     } catch {
-      installer?.kill();
-      installer = undefined;
-      const reason = (await readFile(join(workDir, "install-error.txt"), "utf8").catch(() => "")).trim();
+      if (installer === attempt) installer = undefined;
+      const reason = attempt ? (await readFile(join(attempt.path, "install-error.txt"), "utf8").catch(() => "")).trim() : "";
       publish("ready", { message: reason || "无法启动更新器。请重试或用浏览器下载。" });
       return false;
     }
@@ -227,9 +248,15 @@ function createUpdater({ version, executable, notify, request = fetch, supported
 
   return {
     status: () => state, check, download, install,
+    approveInstall() {
+      if (!installer?.ready) return;
+      try { writeFileSync(join(installer.path, "approved"), "", { flag: "wx" }); }
+      catch { /* The installer will only proceed if approval reached the disk. */ }
+    },
     cancelInstall() {
       if (!installer) return;
-      installer.kill();
+      try { writeFileSync(join(installer.path, "canceled"), "", { flag: "wx" }); }
+      catch { /* An attempt without approval cannot replace any files. */ }
       installer = undefined;
       publish("ready");
     },
