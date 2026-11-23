@@ -337,6 +337,7 @@
     else exportButton.removeAttribute("aria-haspopup");
     document.body.classList.toggle("desktop-editing", editing());
     document.body.classList.toggle("desktop-template-editing", next === "template");
+    document.body.classList.toggle("desktop-font-editing", next === "font");
     document.body.classList.toggle("desktop-resolving", next === "resolve");
   }
 
@@ -782,7 +783,6 @@
     for (const id of ["export-ttf", "export-svg", "export-all-svg", "export-all-png", "export-template"]) {
       options.append($(id));
     }
-    $("font-settings").append($("simplify-template"));
     $("font-exports").hidden = true;
     $("desktop-export-project").addEventListener("click", () => {
       if (page === "font") dialog.showModal();
@@ -793,6 +793,54 @@
       if (event.target.closest("button")) dialog.close();
     }, { capture: true });
     $("desktop-export-font-json").addEventListener("click", () => run(() => exportProject()));
+  }
+
+  function initializeGlyphControls() {
+    const settings = $("font-settings");
+    const fill = $("glyph-tools").closest("section");
+    settings.classList.remove("split");
+    fill.classList.add("split");
+    fill.before(settings);
+    const actions = element("section", "desktop-glyph-actions");
+    actions.append($("simplify-template"), $("clear-glyph"));
+    fill.after(actions);
+
+    const viewport = $("characters");
+    let drag;
+    let suppressClick = false;
+    viewport.addEventListener("pointerdown", event => {
+      if (!event.isPrimary || event.button !== 0) return;
+      suppressClick = false;
+      if (event.pointerType === "touch" || viewport.scrollHeight <= viewport.clientHeight) return;
+      drag = { pointer: event.pointerId, y: event.clientY, scrollTop: viewport.scrollTop, moved: false };
+    });
+    window.addEventListener("pointermove", event => {
+      if (drag?.pointer !== event.pointerId) return;
+      if (!(event.buttons & 1)) return endDrag(event);
+      const delta = event.clientY - drag.y;
+      if (!drag.moved) {
+        if (Math.abs(delta) < 5) return;
+        drag.moved = true;
+        viewport.setPointerCapture(event.pointerId);
+        viewport.classList.add("dragging");
+      }
+      viewport.scrollTop = drag.scrollTop - delta;
+    });
+    function endDrag(event) {
+      if (drag?.pointer !== event.pointerId) return;
+      suppressClick = drag.moved;
+      drag = undefined;
+      viewport.classList.remove("dragging");
+    }
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    viewport.addEventListener("lostpointercapture", endDrag);
+    viewport.addEventListener("click", event => {
+      if (!suppressClick || event.detail === 0) return;
+      suppressClick = false;
+      event.stopImmediatePropagation();
+      event.preventDefault();
+    }, { capture: true });
   }
 
   function resolve(font) {
@@ -999,6 +1047,7 @@
     studio = api;
     initializeUpdates();
     initializeExports();
+    initializeGlyphControls();
     $("use-template").textContent = "使用此模板创建字体";
     $("simplify-template").textContent = "简化模板";
     $("desktop-setup-fields").append($("dimensions"));

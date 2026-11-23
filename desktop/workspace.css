@@ -40,6 +40,55 @@
   min-height: 100%;
 }
 .desktop-template-editing .right .split { padding-top: 12px; border-top: 1px solid #e6eaf0; }
+.desktop-font-editing { overflow: hidden; }
+.desktop-font-editing .workbench {
+  height: calc(100dvh - var(--desktop-title-height) - var(--desktop-editor-height));
+  min-height: 0;
+  padding: 12px;
+  gap: 12px;
+  grid-template-columns: clamp(166px, 22vw, 218px) minmax(0, 1fr) clamp(178px, 23vw, 234px);
+  grid-template-rows: minmax(0, 1fr);
+}
+.desktop-font-editing .workbench > .drawing {
+  grid-row: auto;
+  height: auto;
+  min-height: 0;
+}
+.desktop-font-editing .workbench > .panel { grid-column: auto; min-height: 0; }
+.desktop-font-editing #glyph-controls,
+.desktop-font-editing #glyph-preview {
+  display: flex;
+  padding: 14px 12px;
+  gap: 14px;
+}
+.desktop-font-editing #glyph-controls { gap: 10px; }
+.desktop-font-editing #glyph-controls .split,
+.desktop-font-editing #glyph-preview .split { padding-top: 12px; border-top: 1px solid #e6eaf0; }
+.desktop-font-editing #font-settings .fields { margin: 9px 0 0; gap: 8px; }
+.desktop-font-editing #font-settings input { height: 34px; }
+.desktop-font-editing #glyph-tools { margin: 9px 0 0; }
+.desktop-font-editing #point-fill-status { margin-top: 6px; }
+.desktop-font-editing #point-fill-controls .stack { margin-top: 6px; }
+.desktop-glyph-actions { display: grid; gap: 6px; }
+.desktop-glyph-actions #clear-glyph { margin: 0; }
+.desktop-font-editing #cycle-point-connection,
+.desktop-glyph-actions .button { min-height: 33px; padding-block: 4px; }
+.desktop-font-editing #characters {
+  height: 146px;
+  padding: 3px;
+  grid-auto-rows: 32px;
+  align-content: start;
+  overflow: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  user-select: none;
+  cursor: grab;
+}
+.desktop-font-editing #characters .character { aspect-ratio: auto; outline-offset: 1px; }
+.desktop-font-editing #characters.dragging,
+.desktop-font-editing #characters.dragging .character { cursor: grabbing; }
+.desktop-font-editing .stage { scrollbar-width: none; }
 #desktop-template-name { margin-top: 12px; }
 .desktop-app .sample-output { overflow: hidden; scrollbar-width: none; }
 .desktop-app .sample-output::-webkit-scrollbar { display: none; }
@@ -263,7 +312,6 @@
 }
 .desktop-editor-bar .button { flex: none; }
 .desktop-history { display: flex; flex: none; gap: 6px; }
-#font-settings #simplify-template { margin-top: 12px; }
 .desktop-font-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .desktop-save-status { flex: 1; text-align: right; font-size: .8rem; color: #566175; }
 .desktop-save-status.dirty { color: #805710; }

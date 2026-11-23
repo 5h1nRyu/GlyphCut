@@ -644,10 +644,16 @@
         button.setAttribute("aria-pressed", active);
       });
       const activeCharacter = document.activeElement?.dataset.char;
-      $("characters").innerHTML = [...groups[group]].map(ch =>
+      const characters = $("characters");
+      const scrollTop = characters.dataset.group === group ? characters.scrollTop : 0;
+      characters.innerHTML = [...groups[group]].map(ch =>
         `<button class="character${ch === project.character ? " active" : ""}${project.glyphs[ch]?.length ? " designed" : ""}"
           type="button" aria-pressed="${ch === project.character}" data-char="${ch}">${ch}</button>`).join("");
-      if (activeCharacter) $("characters").querySelector(`[data-char="${activeCharacter}"]`)?.focus({ preventScroll: true });
+      if (workspace) {
+        characters.dataset.group = group;
+        characters.scrollTop = scrollTop;
+      }
+      if (activeCharacter) characters.querySelector(`[data-char="${activeCharacter}"]`)?.focus({ preventScroll: true });
       $("export-ttf").disabled = !size;
       $("export-all-svg").disabled = !size;
       $("export-all-png").disabled = !size || exportingPng;
@@ -1294,6 +1300,7 @@ ${paths}
           future.length = 0;
           resetPointer();
           render();
+          if (project.mode === "glyph") $("characters").querySelector(".active")?.scrollIntoView({ block: "nearest" });
           $("stage").scrollTo(0, 0);
         }
       });
