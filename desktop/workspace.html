@@ -72,6 +72,17 @@
     </section>
   </div>
 </main>
+<dialog id="desktop-export-dialog" class="desktop-dialog" aria-labelledby="desktop-export-title">
+  <form method="dialog">
+    <header>
+      <h2 id="desktop-export-title">导出字体</h2>
+      <button type="submit" class="button" autofocus>关闭</button>
+    </header>
+  </form>
+  <div class="desktop-export-options" id="desktop-export-options">
+    <button id="desktop-export-font-json" class="button block" type="button"><svg><use href="#i-download"/></svg>导出项目 JSON</button>
+  </div>
+</dialog>
 <dialog id="desktop-delete-dialog" class="desktop-dialog" aria-labelledby="desktop-delete-title" aria-describedby="desktop-delete-detail">
   <form method="dialog">
     <header><h2 id="desktop-delete-title"></h2></header>

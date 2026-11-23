@@ -25,18 +25,19 @@ function templateData(input, id) {
 }
 
 function fontData(template, project, id) {
-  const { name, glyphs, baseline, spacing, sample, character } = project;
+  const { name, glyphs, baseline, spacing, sample, character,
+    autoSample = sample === "" || sample === "ABC 123" } = project;
   if (typeof name !== "string" || !name.trim() || name.length > 100 ||
       !glyphs || typeof glyphs !== "object" || Array.isArray(glyphs) ||
       !Object.entries(glyphs).every(([ch, ids]) => /^[A-Za-z0-9]$/.test(ch) &&
         Array.isArray(ids) && ids.every(index => Number.isInteger(index) && index >= 0)) ||
       !Number.isFinite(baseline) || baseline < 0 || baseline > 100 ||
       !Number.isFinite(spacing) || spacing < 0 || spacing > 8192 ||
-      typeof sample !== "string" || sample.length > 100 ||
+      typeof sample !== "string" || sample.length > 100 || typeof autoSample !== "boolean" ||
       typeof character !== "string" || !/^[A-Za-z0-9]$/.test(character)) {
     throw new Error("字体数据无效。");
   }
-  return { format: fontFormat, id, name: name.trim(), template, glyphs, baseline, spacing, sample, character,
+  return { format: fontFormat, id, name: name.trim(), template, glyphs, baseline, spacing, sample, autoSample, character,
     ...(project.unconfirmed === true ? { unconfirmed: true } : {}) };
 }
 
@@ -167,7 +168,7 @@ function createProjects(root) {
       const template = await requireRecord("templates", templateId);
       const font = fontData(template, {
         name: `${template.name.slice(0, 96)} 字体`,
-        glyphs: {}, baseline: 86, spacing: 18, sample: "ABC 123", character: "A", unconfirmed: true
+        glyphs: {}, baseline: 86, spacing: 18, sample: "", character: "A", unconfirmed: true
       }, randomUUID());
       return write("fonts", font);
     }),

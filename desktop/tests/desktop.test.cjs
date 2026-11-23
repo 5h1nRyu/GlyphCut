@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const { createHash } = require("node:crypto");
 const { EventEmitter } = require("node:events");
-const { mkdtemp, readFile, rm } = require("node:fs/promises");
+const { mkdtemp, readFile, rm, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const { Readable } = require("node:stream");
@@ -70,7 +70,7 @@ test("font autosaves preserve the draft across reopening until explicit confirma
   const template = await projects.saveTemplate({ name: "Grid", spec, disabledRegions: [] });
   const font = await projects.createFont(template.id);
   assert.equal(font.unconfirmed, true);
-  await projects.saveFont(font.id, { ...font, sample: "AB", unconfirmed: false });
+  await projects.saveFont(font.id, { ...font, sample: "AB", autoSample: false, unconfirmed: false });
 
   const reopened = createProjects(root);
   const [draft] = (await reopened.load()).fonts;
@@ -81,6 +81,29 @@ test("font autosaves preserve the draft across reopening until explicit confirma
   const { font: saved } = await reopened.saveFont(font.id, { ...draft, glyphs: { A: [0] } });
   assert.equal(saved.unconfirmed, undefined);
   assert.deepEqual(saved.glyphs, { A: [0] });
+});
+
+test("new fonts and the legacy default use automatic samples while custom text survives reload", async t => {
+  const root = await temporary(t);
+  const projects = createProjects(root);
+  const spec = { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] };
+  const template = await projects.saveTemplate({ name: "Grid", spec, disabledRegions: [] });
+  const font = await projects.createFont(template.id);
+  assert.equal(font.autoSample, true);
+  assert.equal(font.sample, "");
+
+  const file = join(root, "fonts", font.id + ".json");
+  const legacy = { ...font, sample: "ABC 123" };
+  delete legacy.autoSample;
+  await writeFile(file, JSON.stringify(legacy));
+  assert.equal((await projects.load()).fonts[0].autoSample, true);
+  await writeFile(file, JSON.stringify({ ...legacy, sample: "A CB" }));
+  assert.equal((await projects.load()).fonts[0].autoSample, false);
+
+  await projects.saveFont(font.id, { ...legacy, autoSample: false });
+  const [custom] = (await createProjects(root).load()).fonts;
+  assert.equal(custom.autoSample, false);
+  assert.equal(custom.sample, "ABC 123");
 });
 
 test("only a newer stable release with a verifiable Windows archive is eligible", () => {

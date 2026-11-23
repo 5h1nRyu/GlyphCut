@@ -38,8 +38,10 @@
   const fontFields = () => {
     const p = project();
     return { name: p.fontName.trim(), glyphs: p.glyphs, baseline: p.baseline, spacing: p.spacing,
-      sample: p.sample, character: p.character };
+      sample: p.sample, autoSample: p.autoSample, character: p.character };
   };
+  const sampleText = font => font.autoSample ?
+    [...alphabet].filter(ch => font.glyphs[ch]?.length).slice(0, 3).join("") : font.sample;
   const editing = () => page === "template" || page === "font";
   const unconfirmedFont = () => page === "font" && editingRecord.unconfirmed === true;
   const simplified = () => page === "font" && !sameShape(editingRecord.template, templateFields());
@@ -92,10 +94,10 @@
   }
 
   function fontArt(font) {
-    const sample = font.sample.trim();
-    if (!sample) return icon("i-glyph");
+    const sample = sampleText(font).trim();
     const spec = font.template.spec;
     const svg = art(spec);
+    if (!sample) return svg;
     svg.classList.add("desktop-font-sample");
     const geometry = studio.geometry(spec);
     const advance = spec.width + 2 * font.spacing;
@@ -195,6 +197,9 @@
     editorBar.hidden = !editing();
     templateSetup.hidden = next !== "setup";
     resolvePanel.hidden = next !== "resolve";
+    const exportButton = $("desktop-export-project");
+    if (next === "font") exportButton.setAttribute("aria-haspopup", "dialog");
+    else exportButton.removeAttribute("aria-haspopup");
     document.body.classList.toggle("desktop-editing", editing());
     document.body.classList.toggle("desktop-template-editing", next === "template");
     document.body.classList.toggle("desktop-resolving", next === "resolve");
@@ -437,6 +442,25 @@
     return studio.download(JSON.stringify(record, null, 2), "application/json", studio.safeName(record.name) + extension);
   }
 
+  function initializeExports() {
+    const dialog = $("desktop-export-dialog");
+    const options = $("desktop-export-options");
+    for (const id of ["export-ttf", "export-svg", "export-all-svg", "export-all-png", "export-template"]) {
+      options.append($(id));
+    }
+    $("font-settings").append($("simplify-template"));
+    $("font-exports").hidden = true;
+    $("desktop-export-project").addEventListener("click", () => {
+      if (page === "font") dialog.showModal();
+      else run(() => exportProject());
+    });
+    dialog.addEventListener("keydown", event => event.stopPropagation());
+    options.addEventListener("click", event => {
+      if (event.target.closest("button")) dialog.close();
+    }, { capture: true });
+    $("desktop-export-font-json").addEventListener("click", () => run(() => exportProject()));
+  }
+
   function resolve(font) {
     resolvingFont = font;
     preview = null;
@@ -632,15 +656,18 @@
   function start(api) {
     studio = api;
     initializeUpdates();
+    initializeExports();
     $("use-template").textContent = "使用此模板创建字体";
     $("simplify-template").textContent = "简化为独立模板";
     $("desktop-setup-fields").append($("dimensions"));
     $("apply-dimensions").textContent = "创建并编辑";
+    $("apply-dimensions").classList.add("accent");
     $("desktop-setup-fields").addEventListener("input", renderSetupPreview);
     new ResizeObserver(renderSetupPreview).observe(setupCanvas.parentElement);
-    const undo = $("undo");
-    undo.className = "button";
-    $("desktop-export-project").before(undo);
+    const history = $("undo").parentElement;
+    history.className = "desktop-history";
+    for (const button of history.children) button.className = "button";
+    $("desktop-export-project").before(history);
     for (const id of ["desktop-delete-dialog", "desktop-retain-font"]) {
       $(id).addEventListener("keydown", event => event.stopPropagation());
     }
@@ -654,7 +681,6 @@
     });
     $("desktop-setup-back").addEventListener("click", () => run(() => showMenu("templates")));
     $("desktop-save").addEventListener("click", () => run(saveManually));
-    $("desktop-export-project").addEventListener("click", () => run(() => exportProject()));
     $("desktop-editor-back").addEventListener("click", () => run(async () => {
       const next = page === "template" ? "templates" : "fonts";
       if (!await prepareToLeave()) return;
@@ -720,7 +746,7 @@
   }
 
   globalThis.GlyphCutWorkspace = {
-    start, markChanged, editing,
+    start, markChanged, editing, sampleText,
     createTemplate: dimensions => run(() => createTemplate(dimensions)),
     createFont: () => run(createFont),
     refreshSample: () => refreshSample?.(),

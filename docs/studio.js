@@ -143,6 +143,7 @@
       restored.character = value.character;
     }
     if (typeof value.sample === "string") restored.sample = value.sample.slice(0, 100);
+    if (workspace) restored.autoSample = value.autoSample === true;
     restored.mode = value.mode === "glyph" && restored.template && pack(restored.template) === pack(restored.draft)
       ? "glyph" : "template";
     return restored;
@@ -532,11 +533,13 @@
     const sample = $("sample-output");
     sample.replaceChildren();
     workspace?.refreshSample();
-    if (project.mode !== "glyph" || !project.sample) return;
+    const text = workspace?.sampleText(project) ?? project.sample;
+    if (workspace) $("sample-text").placeholder = project.autoSample ? text : "";
+    if (project.mode !== "glyph" || !text) return;
     const geometry = getGeometry(project.template);
     const { width, height } = project.template;
     const spacing = project.spacing;
-    for (const ch of project.sample) {
+    for (const ch of text) {
       if (ch === " ") {
         const space = document.createElement("span");
         space.className = "space";
@@ -611,7 +614,7 @@
       $("font-name").value = project.fontName;
       if (!workspace) $("baseline").value = project.baseline;
       $("spacing").value = project.spacing;
-      $("sample-text").value = project.sample;
+      $("sample-text").value = project.autoSample ? "" : project.sample;
       const size = Object.keys(project.glyphs).length;
       $("simplify-template").disabled = !size;
       $("glyph-disabled-help").hidden = !project.disabledRegions.length;
@@ -1075,6 +1078,7 @@
   $("clear-glyph").addEventListener("click", () => change(() => { delete project.glyphs[project.character]; }));
   $("sample-text").addEventListener("input", event => {
     project.sample = event.target.value;
+    if (workspace) project.autoSample = !project.sample;
     persist();
     renderSample();
   });
