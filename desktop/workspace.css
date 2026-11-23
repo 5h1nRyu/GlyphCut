@@ -42,7 +42,10 @@
 }
 .desktop-template-editing #use-template { white-space: nowrap; }
 .desktop-template-editing .workbench #template-preview { height: 100%; }
-.desktop-linked-fonts { display: flex; flex-direction: column; min-height: 0; margin-top: auto; padding-top: 12px; }
+.desktop-template-editing .preview-metrics { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.desktop-template-editing .preview-metrics div { padding-inline: 7px; }
+.desktop-template-editing .preview-metrics output { font-size: 1.0625rem; overflow-wrap: anywhere; }
+.desktop-linked-fonts { display: flex; flex-direction: column; min-height: 0; padding-top: 12px; }
 #desktop-linked-font-list {
   display: grid;
   align-content: start;
@@ -96,8 +99,6 @@
 .desktop-font-editing #point-fill-controls .stack { margin-top: 6px; }
 .desktop-glyph-actions { display: grid; gap: 6px; margin-top: auto; }
 .desktop-glyph-actions #clear-glyph { margin: 0; }
-.desktop-glyph-actions .button.cyan { color: #fff; background: #007a89; border-color: #007a89; }
-.desktop-glyph-actions .button.cyan:hover:not(:disabled) { background: #006571; border-color: #006571; }
 .desktop-font-editing #cycle-point-connection,
 .desktop-glyph-actions .button { min-height: 33px; padding-block: 4px; }
 .desktop-font-editing #characters {
@@ -332,7 +333,6 @@
 }
 .desktop-editor-bar .button { flex: none; }
 .desktop-history { display: flex; flex: none; gap: 6px; }
-.desktop-font-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .desktop-save-status { flex: 1; text-align: right; font-size: .8rem; color: #566175; }
 .desktop-save-status.dirty { color: #805710; }
 .desktop-resolve-content { padding-top: 30px; }
@@ -406,6 +406,7 @@
 .desktop-import-file { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
 .desktop-import-file button { flex: none; }
 .desktop-import-file output { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: .875rem; }
+#desktop-import-dialog.file-drag-over { border-color: #80a234; background: #f7fbe9; }
 #desktop-import-name-label, #desktop-import-template-label { margin-top: 14px; }
 .desktop-project-note { color: var(--muted); font-size: .875rem; }
 .desktop-font-scope .desktop-project-note { margin: 0; }

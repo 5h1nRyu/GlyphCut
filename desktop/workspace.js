@@ -265,13 +265,14 @@
     $("desktop-project-submit").textContent = action;
     scope.hidden = !simplify;
     original.disabled = !simplify?.original;
-    independent.checked = true;
+    original.checked = !original.disabled;
+    independent.checked = original.disabled;
     input.value = name;
 
     function refresh() {
       input.disabled = original.checked;
       $("desktop-project-name-label").hidden = input.disabled;
-      note.textContent = original.disabled ? "原模板已删除，可以保存为独立模板。" :
+      note.textContent = original.disabled ? "当前字体使用内嵌模板，可以保存为独立模板。" :
         `另有 ${simplify?.linked ?? 0} 个字体使用此模板。修改后，打开这些字体时需要处理模板变更。`;
       note.hidden = !simplify || (!original.disabled && (!original.checked || !simplify.linked));
       error.hidden = true;
@@ -301,8 +302,8 @@
     }, options);
     try {
       const closed = showDialog(dialog.id);
-      input.focus();
-      input.select();
+      (input.disabled ? original : input).focus();
+      if (!input.disabled) input.select();
       await closed;
       return result;
     } finally {
@@ -454,6 +455,7 @@
     picker.value = "";
     standalone.checked = false;
     $("desktop-import-title").textContent = kind === "font" ? "导入外部字体" : "导入外部模板";
+    $("desktop-import-drop-note").hidden = kind !== "template";
 
     function refresh() {
       const includesTemplate = Boolean(candidate?.font && standalone.checked);
@@ -472,18 +474,16 @@
       error.textContent = errorMessage || conflict;
       error.hidden = !error.textContent;
     }
-    refresh();
-    $("desktop-import-choose").addEventListener("click", () => picker.click(), options);
-    picker.addEventListener("change", async () => {
-      const file = picker.files[0];
-      picker.value = "";
-      if (!file) return;
+    async function selectFile(files) {
+      if (!files.length || submitting) return;
+      const [file] = files;
       const ticket = ++selection;
       candidate = undefined;
       errorMessage = "";
-      filename.textContent = file.name;
+      filename.textContent = files.length === 1 ? file.name : "";
       refresh();
       try {
+        if (files.length !== 1) throw new Error("请一次导入一个模板文件。");
         if (file.size > 8_000_000) throw new Error("文件超过 8 MB。");
         const contents = await file.text();
         if (listeners.signal.aborted || ticket !== selection) return;
@@ -500,7 +500,30 @@
         name.focus();
         if (nameTaken(name.value)) name.select();
       }
+    }
+    refresh();
+    $("desktop-import-choose").addEventListener("click", () => picker.click(), options);
+    picker.addEventListener("change", () => {
+      const files = [...picker.files];
+      picker.value = "";
+      selectFile(files);
     }, options);
+    if (kind === "template") {
+      dialog.addEventListener("dragover", event => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = submitting ? "none" : "copy";
+        dialog.classList.toggle("file-drag-over", !submitting);
+      }, options);
+      dialog.addEventListener("dragleave", event => {
+        if (!dialog.contains(event.relatedTarget)) dialog.classList.remove("file-drag-over");
+      }, options);
+      dialog.addEventListener("drop", event => {
+        event.preventDefault();
+        dialog.classList.remove("file-drag-over");
+        selectFile([...event.dataTransfer.files]);
+      }, options);
+    }
     form.addEventListener("input", event => {
       if (event.target === picker) return;
       errorMessage = "";
@@ -532,6 +555,7 @@
       await showDialog(dialog.id);
     } finally {
       listeners.abort();
+      dialog.classList.remove("file-drag-over");
     }
     if (!saved) return;
     await reload();
@@ -636,7 +660,6 @@
     saveFailed = false;
     setPage("template");
     nameInput.value = template.name;
-    $("desktop-font-title").hidden = true;
     $("desktop-back-label").textContent = "模板菜单";
     studio.open({ draft: template.spec, template: template.spec, disabledRegions: template.disabledRegions });
     renderLinkedFonts(template);
@@ -652,7 +675,6 @@
     editingRecord = font;
     saveFailed = false;
     setPage("font");
-    $("desktop-font-title").hidden = false;
     $("desktop-back-label").textContent = "字体菜单";
     const goToTemplate = $("desktop-go-to-template");
     goToTemplate.disabled = !templates.has(font.template.id);
@@ -671,7 +693,6 @@
     if (saving) status.textContent = "正在保存…";
     else if (unsaved) status.textContent = saveFailed ? "保存失败" : "等待自动保存";
     else status.textContent = unconfirmedFont() ? "草稿已保存" : "已保存";
-    if (page === "font") $("desktop-font-title").textContent = project().fontName;
   }
 
   function markChanged() {
@@ -768,13 +789,16 @@
   }
 
   async function simplifyFont() {
+    const simplification = studio.simplifiedTemplate();
+    if (!simplification) {
+      studio.notify("没有可合并或新禁用的区块。");
+      return;
+    }
     const { template } = editingRecord;
     const saved = await promptProject({
       title: "自动简化模板", caption: "独立模板名称", name: suggestedName(template.name, "（简化）"), action: "简化并保存",
       simplify: { original: templates.has(template.id), linked: linkedFonts(template.id).length - 1 }
     }, async (name, destination) => {
-      const simplification = studio.simplifiedTemplate();
-      if (!simplification) throw new Error("没有可合并或新禁用的区块。");
       await flushSave();
       return desktop.simplifyFont(editingRecord.id, { ...simplification, name, destination });
     });
@@ -828,7 +852,7 @@
       const template = templates.get(editingRecord.template.id);
       if (template) return jumpToEditor(template, "模板", openTemplate);
     }));
-    $("clear-glyph").classList.replace("clear", "cyan");
+    $("clear-glyph").classList.replace("clear", "accent");
     actions.append($("simplify-template"), goToTemplate, $("clear-glyph"));
     fill.after(actions);
 
@@ -1085,6 +1109,7 @@
     initializeGlyphControls();
     $("use-template").textContent = "使用此模板创建字体";
     $("simplify-template").textContent = "自动简化模板";
+    $("clear-template").classList.replace("clear", "accent");
     $("desktop-setup-fields").append($("dimensions"));
     $("apply-dimensions").textContent = "创建并编辑";
     $("apply-dimensions").classList.add("accent");

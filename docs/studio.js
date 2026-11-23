@@ -24,6 +24,8 @@
   const storageKey = "glyph-cut/studio-v1";
   const desktop = globalThis.glyphCutDesktop;
   const workspace = globalThis.GlyphCutWorkspace;
+  const stage = $("stage");
+  const drawing = board.closest(".drawing");
   const copy = value => structuredClone(value);
   const pack = value => JSON.stringify(value);
   const blankDraft = () => ({ width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] });
@@ -329,7 +331,6 @@
     const pad = padFor(project.draft);
     const frameWidth = width + pad * 2;
     const frameHeight = height + pad * 2;
-    const stage = $("stage");
     stageScale = Math.max(0.002, Math.min((stage.offsetWidth - 30) / frameWidth, (stage.offsetHeight - 30) / frameHeight)) * zoom;
     board.style.width = `${frameWidth * stageScale}px`;
     board.style.height = `${frameHeight * stageScale}px`;
@@ -604,7 +605,9 @@
       });
       const geometry = confirmed ? getGeometry(project.draft) : null;
       $("stroke-count").textContent = project.draft.strokes.length;
-      $("region-count").textContent = geometry?.faces.length ?? "—";
+      const disabledCount = project.disabledRegions.length;
+      $("region-count").textContent = workspace && geometry ?
+        `${geometry.faces.length}(${disabledCount})` : geometry?.faces.length ?? "—";
       const explanation = $("template-status");
       const unused = geometry ? new Set(geometry.unused.flatMap(edge => [...edge.sources])).size : 0;
       explanation.classList.toggle("warning", unused > 0);
@@ -612,7 +615,7 @@
         (unused ? `${unused} 条线有部分未形成分区，以虚线标出。` :
           workspace ? "" : "区块已生成，可进入字形设计。") :
         (project.template ? "线条已修改，重新生成可预览新的分区。" : "绘制分割线后生成区块。");
-      if (confirmed && project.disabledRegions.length) explanation.textContent += `已禁用 ${project.disabledRegions.length} 个区块。`;
+      if (!workspace && confirmed && disabledCount) explanation.textContent += `已禁用 ${disabledCount} 个区块。`;
       explanation.hidden = !explanation.textContent;
       $("use-template").disabled = !confirmed;
       $("generate").disabled = Boolean(confirmed);
@@ -913,7 +916,7 @@
     updateHelp();
   });
 
-  board.addEventListener("contextmenu", event => {
+  (workspace ? drawing : board).addEventListener("contextmenu", event => {
     if (pointFillActive()) {
       event.preventDefault();
       if (!outlinePoints.length) return;
@@ -1014,19 +1017,20 @@
     renderBoard();
   });
 
-  function zoomTo(value) {
+  function zoomTo(value, pointer) {
     const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
     if (nextZoom === zoom) return;
-    const stage = $("stage");
     const viewport = stage.getBoundingClientRect();
     const before = board.getBoundingClientRect();
-    const x = (viewport.left + stage.clientWidth / 2 - before.left) / before.width;
-    const y = (viewport.top + stage.clientHeight / 2 - before.top) / before.height;
+    const anchorX = pointer?.clientX ?? viewport.left + stage.clientWidth / 2;
+    const anchorY = pointer?.clientY ?? viewport.top + stage.clientHeight / 2;
+    const x = (anchorX - before.left) / before.width;
+    const y = (anchorY - before.top) / before.height;
     zoom = nextZoom;
     renderBoard();
     const after = board.getBoundingClientRect();
-    stage.scrollBy(after.left + x * after.width - viewport.left - stage.clientWidth / 2,
-      after.top + y * after.height - viewport.top - stage.clientHeight / 2);
+    stage.scrollBy(after.left + x * after.width - (pointer?.clientX ?? viewport.left + stage.clientWidth / 2),
+      after.top + y * after.height - (pointer?.clientY ?? viewport.top + stage.clientHeight / 2));
   }
   $("zoom-out").addEventListener("click", () => zoomTo(zoom / 1.25));
   $("zoom-in").addEventListener("click", () => zoomTo(zoom * 1.25));
@@ -1036,7 +1040,7 @@
     else if (workspace.editing()) requestAnimationFrame(() => {
       if (workspace.editing()) renderBoard();
     });
-  }).observe($("stage"));
+  }).observe(stage);
 
   $("glyph-tools").addEventListener("click", event => {
     const button = event.target.closest("[data-glyph-tool]");
@@ -1045,10 +1049,19 @@
     resetPointer();
     render();
   });
-  $("stage").addEventListener("wheel", event => {
-    if (!pointFillActive() || event.ctrlKey || !event.deltaY || !(outlineSteps.at(-1)?.options.length > 1)) return;
-    event.preventDefault();
-    cyclePointConnection(Math.sign(event.deltaY));
+  (workspace ? drawing : stage).addEventListener("wheel", event => {
+    const cycle = pointFillActive() && !event.ctrlKey && outlineSteps.at(-1)?.options.length > 1;
+    if (cycle && (!workspace || event.shiftKey)) {
+      const delta = event.deltaY || (workspace ? event.deltaX : 0);
+      if (!delta) return;
+      event.preventDefault();
+      cyclePointConnection(Math.sign(delta));
+    } else if (workspace && event.deltaY) {
+      event.preventDefault();
+      const units = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 :
+        event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? stage.clientHeight : 1;
+      zoomTo(zoom * 1.25 ** (-event.deltaY * units / 100), stage.contains(event.target) ? event : undefined);
+    }
   }, { passive: false });
   $("cycle-point-connection").addEventListener("click", () => cyclePointConnection(1));
 
@@ -1302,7 +1315,7 @@ ${paths}
           resetPointer();
           render();
           if (project.mode === "glyph") $("characters").querySelector(".active")?.scrollIntoView({ block: "nearest" });
-          $("stage").scrollTo(0, 0);
+          stage.scrollTo(0, 0);
         }
       });
     } else {
