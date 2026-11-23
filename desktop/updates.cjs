@@ -16,6 +16,7 @@ const repository = "5h1nRyu/GlyphCut";
 const archive = "GlyphCut-Windows-x64.zip";
 const latest = `https://api.github.com/repos/${repository}/releases/latest`;
 const releasePage = `https://github.com/${repository}/releases/latest`;
+const latestManifest = `${releasePage}/download/GlyphCut-update.json`;
 const versionPattern = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/;
 const downloadHosts = new Set(["github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"]);
 const headers = { "User-Agent": "GlyphCut-Desktop" };
@@ -38,7 +39,7 @@ function createUpdateRequest(network) {
         clearAbort();
         reject(error);
       });
-      // Return the redirect to fetchArchive so it can validate the destination before connecting.
+      // Let the asset downloader validate the destination before connecting.
       request.once("redirect", (status, _method, location) => {
         clearAbort();
         resolve(new Response(null, { status, headers: { location } }));
@@ -75,24 +76,48 @@ function findUpdate(data, current) {
   return { version, url, digest, size: asset.size, notes: typeof data.body === "string" ? data.body.slice(0, 3000) : "" };
 }
 
-async function fetchArchive(request, release, target, signal, report) {
-  let url = new URL(release.url);
-  let response;
+async function requestReleaseAsset(request, address, signal) {
+  let url = new URL(address);
   for (let i = 0; i < 5; i++) {
     if (url.protocol !== "https:" || !downloadHosts.has(url.hostname) || url.username || url.password || url.port) {
       throw new Error("更新下载地址无效。");
     }
-    response = await request(url, { signal, redirect: "manual", headers });
-    if (![301, 302, 303, 307, 308].includes(response.status)) break;
+    const response = await request(url, { signal, redirect: "manual", headers });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
     await response.body?.cancel();
     const location = response.headers.get("location");
     if (!location) throw new Error("更新下载地址无效。");
     url = new URL(location, url);
   }
-  if (!response?.ok || !response.body) {
-    await response?.body?.cancel().catch(() => {});
-    const status = response?.status ? `（HTTP ${response.status}）` : "";
-    throw new Error(`更新下载失败${status}，请检查网络或系统代理后重试。`);
+  throw new Error("更新下载地址无效。");
+}
+
+async function readUpdateManifest(request) {
+  const response = await requestReleaseAsset(request, latestManifest, AbortSignal.timeout(8000));
+  if (!response.ok || !response.body) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("无法读取更新清单。");
+  }
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response.body) {
+    size += chunk.length;
+    if (size > 32 * 1024) throw new Error("更新清单过大。");
+    chunks.push(chunk);
+  }
+  const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  if (typeof data?.tag_name !== "string" || !versionPattern.test(data.tag_name.replace(/^v/, "")) ||
+      !Array.isArray(data.assets)) {
+    throw new Error("更新清单格式无效。");
+  }
+  return data;
+}
+
+async function fetchArchive(request, release, target, signal, report) {
+  const response = await requestReleaseAsset(request, release.url, signal);
+  if (!response.ok || !response.body) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error(`更新下载失败（HTTP ${response.status}），请检查网络或系统代理后重试。`);
   }
 
   const hash = createHash("sha256");
@@ -154,15 +179,20 @@ function createUpdater({ version, executable, notify, request = fetch, supported
     release = undefined;
     publish("checking");
     try {
-      const response = await request(latest, {
-        signal: AbortSignal.timeout(15000), redirect: "error", headers: { ...headers, Accept: "application/vnd.github+json" }
-      });
-      if (response.status === 404) return publish("current");
-      if (!response.ok) {
-        await response.body?.cancel().catch(() => {});
-        return publish("checkFailed", { message: `无法检查更新（HTTP ${response.status}）。请重试或用浏览器下载。` });
+      try {
+        release = findUpdate(await readUpdateManifest(request), version);
+      } catch {
+        // Older releases may have only GitHub's release metadata.
+        const response = await request(latest, {
+          signal: AbortSignal.timeout(12000), redirect: "error", headers: { ...headers, Accept: "application/vnd.github+json" }
+        });
+        if (response.status === 404) return publish("current");
+        if (!response.ok) {
+          await response.body?.cancel().catch(() => {});
+          return publish("checkFailed", { message: `无法检查更新（HTTP ${response.status}）。请重试或用浏览器下载。` });
+        }
+        release = findUpdate(await response.json(), version);
       }
-      release = findUpdate(await response.json(), version);
       return publish(release ? "available" : "current");
     } catch (error) {
       const code = networkErrorCode(error);

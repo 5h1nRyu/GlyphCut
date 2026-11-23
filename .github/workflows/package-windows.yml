@@ -66,5 +66,17 @@ jobs:
             node -p "JSON.parse(require('node:fs').readFileSync(0, 'utf8')).version")
           test "$version" = "$zip_version"
           git log -1 --format=%b "$GITHUB_SHA" > release-notes.md
-          gh release create "v$version" GlyphCut-Windows-x64.zip --repo "$GITHUB_REPOSITORY" \
+          read -r digest _ < <(sha256sum GlyphCut-Windows-x64.zip)
+          size=$(stat -c %s GlyphCut-Windows-x64.zip)
+          node - "$version" "$size" "$digest" <<'NODE'
+          const { readFileSync, writeFileSync } = require("node:fs");
+          const [, , version, size, digest] = process.argv;
+          const manifest = {
+            tag_name: "v" + version,
+            body: readFileSync("release-notes.md", "utf8").slice(0, 3000),
+            assets: [{ name: "GlyphCut-Windows-x64.zip", state: "uploaded", size: Number(size), digest: "sha256:" + digest }]
+          };
+          writeFileSync("GlyphCut-update.json", JSON.stringify(manifest, null, 2) + "\n");
+          NODE
+          gh release create "v$version" GlyphCut-Windows-x64.zip GlyphCut-update.json --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "GlyphCut v$version" --notes-file release-notes.md --latest

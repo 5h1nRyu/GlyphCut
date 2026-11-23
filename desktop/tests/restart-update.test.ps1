@@ -36,7 +36,9 @@ updateCode.createUpdater = options => createUpdater({
     options.notify(state);
   },
   request: async target => {
-    if (String(target).startsWith("https://api.github.com/")) {
+    const url = new URL(target);
+    if (url.hostname === "api.github.com") return new Response(null, { status: 403 });
+    if (url.pathname.endsWith("/GlyphCut-update.json")) {
       return new Response(JSON.stringify({
         tag_name: "v" + release.version,
         assets: [{

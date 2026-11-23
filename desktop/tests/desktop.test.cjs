@@ -221,6 +221,58 @@ test("Electron transport returns each redirect to the updater and streams the ve
 });
 
 
+test("the release manifest supplies updates when GitHub's API is blocked", async () => {
+  const requests = [];
+  const manifest = { tag_name: "v1.1.9", body: "版本说明", assets: [{
+    name: "GlyphCut-Windows-x64.zip", state: "uploaded", size: 100, digest: "sha256:" + "a".repeat(64)
+  }] };
+  const asset = "https://release-assets.githubusercontent.com/test";
+  const updater = createUpdater({
+    version: "1.1.8", executable: "GlyphCut.exe", notify() {}, supported: true,
+    request: async target => {
+      const url = new URL(target);
+      requests.push(url.href);
+      if (url.hostname === "api.github.com") return new Response(null, { status: 403 });
+      if (url.href === asset) return Response.json(manifest);
+      return Response.redirect(asset);
+    }
+  });
+  assert.deepEqual(await updater.check(), {
+    phase: "available", currentVersion: "1.1.8", version: "1.1.9", notes: "版本说明"
+  });
+  assert.deepEqual(requests, [
+    "https://github.com/5h1nRyu/GlyphCut/releases/latest/download/GlyphCut-update.json", asset
+  ]);
+});
+
+test("missing or invalid manifests fall back to GitHub's REST API", async () => {
+  const api = "https://api.github.com/repos/5h1nRyu/GlyphCut/releases/latest";
+  const data = { tag_name: "v1.1.9", assets: [{
+    name: "GlyphCut-Windows-x64.zip", state: "uploaded", size: 100, digest: "sha256:" + "a".repeat(64)
+  }] };
+  for (const manifest of [
+    () => new Response(null, { status: 404 }),
+    () => new Response("<html>proxy page</html>"),
+    () => Response.json({ tag_name: "v1.1.9", assets: [] }),
+    () => new Response("x".repeat(33 * 1024)),
+    () => Response.redirect("https://example.com/untrusted")
+  ]) {
+    const requests = [];
+    const updater = createUpdater({
+      version: "1.1.8", executable: "GlyphCut.exe", notify() {}, supported: true,
+      request: async target => {
+        const url = new URL(target);
+        requests.push(url.href);
+        assert.ok(["github.com", "api.github.com"].includes(url.hostname));
+        return url.href === api ? Response.json(data) : manifest();
+      }
+    });
+    assert.equal((await updater.check()).phase, "available");
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1], api);
+  }
+});
+
 test("update checking reports proxy errors, timeouts and HTTP status codes", async () => {
   const check = request => createUpdater({
     version: "1.1.3", executable: "GlyphCut.exe", notify() {}, request, supported: true
