@@ -90,6 +90,32 @@
     </section>
   </div>
 </main>
+<dialog id="desktop-import-dialog" class="desktop-dialog" aria-labelledby="desktop-import-title">
+  <form id="desktop-import-form">
+    <header><h2 id="desktop-import-title"></h2></header>
+    <div class="desktop-import-file">
+      <button id="desktop-import-choose" class="button" type="button" autofocus>选择 JSON 文件</button>
+      <input id="desktop-import-file" type="file" accept=".json,application/json" hidden>
+      <output id="desktop-import-filename" aria-live="polite"></output>
+    </div>
+    <label id="desktop-import-name-label" class="desktop-template-label" hidden>
+      <span id="desktop-import-name-caption"></span>
+      <input id="desktop-import-name" maxlength="100" spellcheck="false">
+    </label>
+    <label id="desktop-import-template-option" class="desktop-dialog-option" hidden>
+      <input id="desktop-import-standalone" type="checkbox">将内嵌模板同时导入为独立模板
+    </label>
+    <label id="desktop-import-template-label" class="desktop-template-label" hidden>
+      独立模板名称
+      <input id="desktop-import-template-name" maxlength="100" spellcheck="false">
+    </label>
+    <p id="desktop-import-error" class="desktop-project-error" role="alert" hidden></p>
+    <footer class="desktop-dialog-actions">
+      <button id="desktop-import-cancel" class="button" type="button">取消</button>
+      <button id="desktop-import-submit" class="button accent" type="submit" disabled>导入</button>
+    </footer>
+  </form>
+</dialog>
 <dialog id="desktop-export-dialog" class="desktop-dialog" aria-labelledby="desktop-export-title">
   <form method="dialog">
     <header>

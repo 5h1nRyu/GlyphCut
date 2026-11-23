@@ -362,6 +362,7 @@
         }));
       }
       cards.append(card("创建新模板", "", icon("i-plus"), openTemplateSetup, "desktop-card-new"));
+      cards.append(card("导入外部模板", "", icon("i-import"), () => importProject(false), "desktop-card-new desktop-card-import"));
     } else {
       for (const font of fonts.values()) {
         const stale = pendingTemplate(font);
@@ -373,10 +374,184 @@
           className: stale ? "pending" : ""
         }));
       }
+      cards.append(card("导入字体或模板", "", icon("i-import"), () => importProject(true), "desktop-card-new desktop-card-import"));
     }
     const content = menu.querySelector(".desktop-library-content");
     content.scrollTop = 0;
     if (!busy) title.focus({ preventScroll: true });
+  }
+
+  async function slideMenu(next) {
+    if (menu.hidden || page === next || matchMedia("(prefers-reduced-motion: reduce)").matches) return showMenu(next);
+    const content = menu.querySelector(".desktop-library-content");
+    const outgoing = content.cloneNode(true);
+    const scrollTop = content.scrollTop;
+    for (const node of outgoing.querySelectorAll("[id]")) node.removeAttribute("id");
+    outgoing.inert = true;
+    outgoing.setAttribute("aria-hidden", "true");
+    outgoing.classList.add("desktop-library-outgoing");
+    const direction = next === "fonts" ? 1 : -1;
+    showMenu(next);
+    menu.prepend(outgoing);
+    outgoing.scrollTop = scrollTop;
+    const options = { duration: 250, easing: "cubic-bezier(.22,.75,.28,1)" };
+    const departing = outgoing.animate({ transform: ["translateX(0)", `translateX(${-direction * 100}%)`] }, options);
+    const arriving = content.animate({ transform: [`translateX(${direction * 100}%)`, "translateX(0)"] }, options);
+    try {
+      await Promise.all([departing.finished, arriving.finished]);
+    } finally {
+      outgoing.remove();
+    }
+  }
+
+  function readImport(value, filename, allowFont) {
+    const fallback = filename.replace(/(?:\.template|\.glyphs)?\.json$/i, "").trim().slice(0, 96)
+      .replace(/[\uD800-\uDBFF]$/, "") || "导入项目";
+    let source;
+    let font;
+    if (value?.format === "glyph-cut-template") {
+      source = value;
+    } else if (value?.format === "glyph-cut-font" && value.template) {
+      source = value.template;
+      font = value;
+    } else if (value?.format === "glyph-cut-v1") {
+      source = { name: value.templateName, spec: value.template ?? value.draft, disabledRegions: value.disabledRegions };
+      if (value.glyphs !== undefined) {
+        font = { ...value, name: value.fontName, baseline: value.baseline ?? 86, spacing: value.spacing ?? 18,
+          sample: value.sample ?? "", character: value.character ?? "A" };
+      }
+    } else {
+      throw new Error("请选择字形切片导出的 JSON 文件。");
+    }
+    if (font && !allowFont) throw new Error("请在字体菜单导入字体文件。");
+
+    const spec = studio.validateSpec(source.spec);
+    const count = studio.geometry(spec).faces.length;
+    const validRegion = id => Number.isInteger(id) && id >= 0 && id < count;
+    const disabled = source.disabledRegions ?? [];
+    if (!Array.isArray(disabled) || !disabled.every(validRegion)) throw new Error("模板包含无效的禁用区块。");
+    const disabledSet = new Set(disabled);
+    const disabledRegions = [...disabledSet].sort((a, b) => a - b);
+    const sourceName = typeof source.name === "string" ? source.name.trim() : "";
+    const template = { name: sourceName || (font ? fallback + " 模板" : fallback), spec, disabledRegions };
+    if (font) {
+      const glyphs = font.glyphs;
+      if (!glyphs || typeof glyphs !== "object" || Array.isArray(glyphs) ||
+          !Object.values(glyphs).every(ids => Array.isArray(ids) && ids.every(id => validRegion(id) && !disabledSet.has(id)))) {
+        throw new Error("字体包含无效的字形区块。");
+      }
+    }
+    const fontName = typeof font?.name === "string" ? font.name.trim() : "";
+    return { name: font ? fontName || fallback : template.name, template, font };
+  }
+
+  async function importProject(allowFont) {
+    const dialog = $("desktop-import-dialog");
+    const form = $("desktop-import-form");
+    const picker = $("desktop-import-file");
+    const filename = $("desktop-import-filename");
+    const name = $("desktop-import-name");
+    const standalone = $("desktop-import-standalone");
+    const templateName = $("desktop-import-template-name");
+    const error = $("desktop-import-error");
+    const submit = $("desktop-import-submit");
+    const listeners = new AbortController();
+    const options = { signal: listeners.signal };
+    let candidate;
+    let saved;
+    let submitting = false;
+    let selection = 0;
+    let errorMessage = "";
+    filename.textContent = "";
+    picker.value = "";
+    standalone.checked = false;
+    $("desktop-import-title").textContent = allowFont ? "导入字体或模板" : "导入外部模板";
+
+    function refresh() {
+      const includesTemplate = Boolean(candidate?.font && standalone.checked);
+      $("desktop-import-name-label").hidden = !candidate;
+      $("desktop-import-name-caption").textContent = candidate?.font ? "字体名称" : "模板名称";
+      $("desktop-import-template-option").hidden = !candidate?.font;
+      $("desktop-import-template-label").hidden = !includesTemplate;
+      let conflict = "";
+      if (candidate && nameTaken(name.value)) conflict = duplicateName;
+      else if (includesTemplate && nameTaken(templateName.value)) conflict = "独立模板名称已被使用，请换一个名称。";
+      else if (includesTemplate && nameKey(name.value) && nameKey(name.value) === nameKey(templateName.value)) {
+        conflict = "字体和独立模板的名称不能相同。";
+      }
+      submit.disabled = !candidate || Boolean(conflict) || !name.value.trim() ||
+        (includesTemplate && !templateName.value.trim());
+      error.textContent = errorMessage || conflict;
+      error.hidden = !error.textContent;
+    }
+    refresh();
+    $("desktop-import-choose").addEventListener("click", () => picker.click(), options);
+    picker.addEventListener("change", async () => {
+      const file = picker.files[0];
+      picker.value = "";
+      if (!file) return;
+      const ticket = ++selection;
+      candidate = undefined;
+      errorMessage = "";
+      filename.textContent = file.name;
+      refresh();
+      try {
+        if (file.size > 8_000_000) throw new Error("文件超过 8 MB。");
+        const contents = await file.text();
+        if (listeners.signal.aborted || ticket !== selection) return;
+        candidate = readImport(JSON.parse(contents.replace(/^\uFEFF/, "")), file.name, allowFont);
+        name.value = candidate.name;
+        templateName.value = candidate.template.name;
+        standalone.checked = false;
+      } catch (failure) {
+        if (listeners.signal.aborted || ticket !== selection) return;
+        errorMessage = failure instanceof SyntaxError ? "文件不是有效的 JSON。" : failure.message;
+      }
+      refresh();
+      if (candidate) {
+        name.focus();
+        if (nameTaken(name.value)) name.select();
+      }
+    }, options);
+    form.addEventListener("input", event => {
+      if (event.target === picker) return;
+      errorMessage = "";
+      refresh();
+    }, options);
+    $("desktop-import-cancel").addEventListener("click", () => dialog.close(), options);
+    dialog.addEventListener("cancel", event => { if (submitting) event.preventDefault(); }, options);
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (submitting || submit.disabled) return;
+      submitting = true;
+      form.inert = true;
+      try {
+        const importedName = checkNewName(name);
+        saved = candidate.font
+          ? await desktop.importFont({ ...candidate.font, name: importedName, template: candidate.template },
+            standalone.checked ? checkNewName(templateName) : undefined)
+          : await desktop.saveTemplate({ ...candidate.template, name: importedName });
+        dialog.close();
+      } catch (failure) {
+        errorMessage = failure.message;
+        refresh();
+      } finally {
+        submitting = false;
+        form.inert = false;
+      }
+    }, options);
+    try {
+      await showDialog(dialog.id);
+    } finally {
+      listeners.abort();
+    }
+    if (!saved) return;
+    await reload();
+    await slideMenu(candidate.font ? "fonts" : "templates");
+    studio.notify(candidate.font ? "字体已导入。" : "模板已导入。");
+    requestAnimationFrame(() => {
+      $("desktop-cards").querySelector(`[data-project-id="${saved.id}"] .desktop-card`)?.focus();
+    });
   }
 
   async function reload() {
@@ -862,8 +1037,8 @@
       await reload();
       showMenu(next);
     }));
-    $("desktop-prev-menu").addEventListener("click", () => run(() => showMenu("templates")));
-    $("desktop-next-menu").addEventListener("click", () => run(() => showMenu("fonts")));
+    $("desktop-prev-menu").addEventListener("click", () => run(() => slideMenu("templates")));
+    $("desktop-next-menu").addEventListener("click", () => run(() => slideMenu("fonts")));
     $("desktop-resolve-back").addEventListener("click", () => run(async () => {
       await reload();
       showMenu("fonts");

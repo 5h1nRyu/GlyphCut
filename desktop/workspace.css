@@ -173,6 +173,8 @@
   overflow: auto;
   padding: 42px clamp(52px, 8vw, 126px) 40px;
 }
+.desktop-library { overflow: hidden; }
+.desktop-library-outgoing { position: absolute; inset: 0; pointer-events: none; }
 .desktop-menu-heading, .desktop-cards, .desktop-library .desktop-empty,
 .desktop-resolve-content > * { max-width: 1400px; margin-inline: auto; }
 .desktop-menu-heading { margin-bottom: 24px; }
@@ -227,6 +229,7 @@
 .desktop-card.pending small { color: #993142; }
 .desktop-card-new { border-style: dashed; }
 .desktop-card-new .desktop-card-visual { background: #f1f7e7; color: #3b5634; }
+.desktop-card-import .desktop-card-visual { background: #edf3fa; color: #355474; }
 .desktop-card-new .desktop-card-caption { flex: 1; align-content: center; }
 .desktop-card-visual > svg:not(.desktop-art) { width: 32px; height: 32px; }
 .desktop-edge-link {
@@ -332,6 +335,10 @@
 .desktop-dialog-option input { margin: 0; accent-color: #52800b; }
 .desktop-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
 #desktop-project-name-label { margin-top: 16px; }
+.desktop-import-file { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+.desktop-import-file button { flex: none; }
+.desktop-import-file output { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: .875rem; }
+#desktop-import-name-label, #desktop-import-template-label { margin-top: 14px; }
 .desktop-project-note { color: var(--muted); font-size: .875rem; }
 .desktop-font-scope .desktop-project-note { margin: 0; }
 .desktop-project-error { color: #a02536; font-size: .875rem; }

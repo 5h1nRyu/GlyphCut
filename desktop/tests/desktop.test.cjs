@@ -211,6 +211,34 @@ test("simplifying the linked template preserves other font snapshots and a named
   await assert.rejects(projects.simplifyFont(third.id, { ...simplified, destination: "original" }), /原模板已删除/);
 });
 
+test("font import gives the font and snapshot new IDs and optionally saves the linked template", async t => {
+  const projects = createProjects(await temporary(t));
+  const template = await projects.saveTemplate({
+    name: "Source template", spec: { width: 120, height: 120, stepX: 30, stepY: 30, strokes: [] }, disabledRegions: []
+  });
+  const source = await projects.createFont(template.id, { name: "Source font", characterGroups: ["digits"] });
+  const { font } = await projects.saveFont(source.id, { ...source, glyphs: { 0: [0] } });
+  await assert.rejects(projects.importFont(font), /同名/);
+  await assert.rejects(projects.importFont({ ...font, name: "Imported" }, "Source template"), /同名/);
+  await assert.rejects(projects.importFont({ ...font, name: "Imported" }, " imported "), /名称不能相同/);
+  assert.deepEqual((await projects.load()).templates, [template]);
+  assert.equal((await projects.load()).fonts.length, 1);
+
+  const embedded = await projects.importFont({ ...font, name: "Embedded" });
+  assert.notEqual(embedded.id, font.id);
+  assert.notEqual(embedded.template.id, template.id);
+  assert.equal(embedded.unconfirmed, undefined);
+  assert.deepEqual(embedded.glyphs, font.glyphs);
+  assert.deepEqual(embedded.characterGroups, font.characterGroups);
+  assert.deepEqual((await projects.load()).templates, [template]);
+
+  const linked = await projects.importFont({ ...font, name: "Linked import" }, "Imported template");
+  const saved = (await projects.load()).templates.find(record => record.name === "Imported template");
+  assert.deepEqual(linked.template, saved);
+  assert.notEqual(saved.id, template.id);
+  assert.deepEqual(saved.spec, template.spec);
+});
+
 test("point fill ignores template edges unless the selected lines cut across the frame or close a loop", () => {
   const strokes = [30, 60, 90].flatMap(value => [
     { a: [value, 0], b: [value, 120] }, { a: [0, value], b: [120, value] }

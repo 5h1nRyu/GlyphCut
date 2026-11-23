@@ -175,8 +175,8 @@ function createProjects(root) {
     await rm(staging, { recursive: true, force: true }).catch(() => {});
   }
 
-  async function saveTemplateAndFont(font, template, changes, previousTemplate) {
-    const next = fontData(template, changes, font.id);
+  async function saveTemplateAndFont(id, template, changes, previousTemplate) {
+    const next = fontData(template, changes, id);
     await write("templates", template);
     try {
       await write("fonts", next);
@@ -230,6 +230,21 @@ function createProjects(root) {
       await requireUniqueName(font.name);
       return write("fonts", font);
     }),
+    importFont: (input, standaloneName) => queue(async () => {
+      const name = projectName(input.name);
+      const standalone = standaloneName !== undefined;
+      const templateName = projectName(standalone ? standaloneName : input.template.name);
+      const template = templateData({ ...input.template, name: templateName }, randomUUID());
+      const fields = { ...input, name, unconfirmed: false };
+      const id = randomUUID();
+      await requireUniqueName(name);
+      if (standalone) {
+        if (nameKey(name) === nameKey(template.name)) throw new Error("字体和独立模板的名称不能相同。");
+        await requireUniqueName(template.name);
+        return (await saveTemplateAndFont(id, template, fields)).font;
+      }
+      return write("fonts", fontData(template, fields, id));
+    }),
     saveFont: (id, changes) => queue(async () => {
       const font = await requireRecord("fonts", id);
       const current = await read("templates", font.template.id);
@@ -255,7 +270,7 @@ function createProjects(root) {
         throw new Error("请选择简化模板的保存方式。");
       }
       const previousTemplate = input.destination === "original" ? current : null;
-      return saveTemplateAndFont(font, template, { ...font, glyphs: input.glyphs }, previousTemplate);
+      return saveTemplateAndFont(font.id, template, { ...font, glyphs: input.glyphs }, previousTemplate);
     }),
     confirmFont: id => queue(async () => {
       const font = await requireRecord("fonts", id);
@@ -277,7 +292,7 @@ function createProjects(root) {
       }
       const template = templateData({ ...font.template, name: projectName(name) }, randomUUID());
       await requireUniqueName(template.name);
-      return saveTemplateAndFont(font, template, font);
+      return saveTemplateAndFont(font.id, template, font);
     })
   };
 }

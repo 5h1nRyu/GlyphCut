@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("glyphCutDesktop", {
   saveTemplate: template => ipcRenderer.invoke("project:saveTemplate", template),
   copyProject: (kind, id, name) => ipcRenderer.invoke("project:copyProject", kind, id, name),
   createFont: (templateId, options) => ipcRenderer.invoke("project:createFont", templateId, options),
+  importFont: (font, standaloneName) => ipcRenderer.invoke("project:importFont", font, standaloneName),
   saveFont: (id, changes) => ipcRenderer.invoke("project:saveFont", id, changes),
   simplifyFont: (id, input) => ipcRenderer.invoke("project:simplifyFont", id, input),
   confirmFont: id => ipcRenderer.invoke("project:confirmFont", id),
