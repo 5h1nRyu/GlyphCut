@@ -10,6 +10,8 @@ const { Readable } = require("node:stream");
 const { test } = require("node:test");
 const { createProjects } = require("../projects.cjs");
 const { createUpdater, createUpdateRequest, fetchArchive, findUpdate } = require("../updates.cjs");
+require("../../docs/geometry.js");
+const geometry = globalThis.GlyphGeometry;
 
 async function temporary(t) {
   const folder = await mkdtemp(join(tmpdir(), "glyphcut-test-"));
@@ -207,6 +209,46 @@ test("simplifying the linked template preserves other font snapshots and a named
   assert.deepEqual(kept.font.template, kept.template);
   await projects.deleteTemplate(template.id);
   await assert.rejects(projects.simplifyFont(third.id, { ...simplified, destination: "original" }), /原模板已删除/);
+});
+
+test("point fill ignores template edges unless the selected lines cut across the frame or close a loop", () => {
+  const strokes = [30, 60, 90].flatMap(value => [
+    { a: [value, 0], b: [value, 120] }, { a: [0, value], b: [120, value] }
+  ]);
+  const mesh = geometry.arrange({ width: 120, height: 120, strokes });
+  const partitions = (...points) => {
+    const nodes = points.map(([x, y]) => mesh.boundaryPoints.find(({ p }) => p[0] === x && p[1] === y));
+    const cuts = [];
+    for (let i = 1; i < nodes.length; i++) {
+      const [connection] = geometry.pointConnections(mesh, nodes[i - 1], nodes[i], new Set(cuts));
+      assert.ok(connection);
+      cuts.push(...connection);
+    }
+    return geometry.partitionByPath(mesh, cuts);
+  };
+  assert.deepEqual(partitions([60, 30], [60, 90]), [mesh.faces.map(({ id }) => id)]);
+  assert.deepEqual(partitions([60, 0], [60, 120]).map(ids => ids.length), [8, 8]);
+  assert.deepEqual(partitions([60, 0], [60, 120], [90, 120], [90, 0]).map(ids => ids.length).sort(), [4, 4, 8]);
+  const closed = partitions([30, 30], [90, 30], [90, 90], [30, 90], [30, 30]);
+  assert.deepEqual(closed.map(ids => ids.length).sort((a, b) => a - b), [4, 12]);
+  const containing = point => closed.find(ids => ids.includes(geometry.regionAt(mesh, point)));
+  assert.equal(containing([15, 15]), containing([105, 105]));
+  assert.notEqual(containing([15, 15]), containing([45, 45]));
+});
+
+test("switching between straight and curved point connections changes which faces form a partition", () => {
+  const a = [60, 0];
+  const b = [60, 120];
+  const mesh = geometry.arrange({ width: 120, height: 120, strokes: [{ a, b }, { a, b, c: [100, 60] }] });
+  const from = mesh.boundaryPoints.find(node => node.p[0] === a[0] && node.p[1] === a[1]);
+  const to = mesh.boundaryPoints.find(node => node.p[0] === b[0] && node.p[1] === b[1]);
+  const [straight, curved] = geometry.pointConnections(mesh, from, to, new Set());
+  assert.equal(straight[0].c, undefined);
+  assert.ok(curved[0].c);
+  const left = geometry.regionAt(mesh, [30, 60]);
+  const between = geometry.regionAt(mesh, [70, 60]);
+  assert.ok(!geometry.partitionByPath(mesh, straight).find(ids => ids.includes(left)).includes(between));
+  assert.ok(geometry.partitionByPath(mesh, curved).find(ids => ids.includes(left)).includes(between));
 });
 
 test("only a newer stable release with a verifiable Windows archive is eligible", () => {

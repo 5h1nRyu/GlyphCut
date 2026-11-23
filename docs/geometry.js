@@ -322,23 +322,22 @@ globalThis.GlyphGeometry = (() => {
     return connections.sort(([a], [b]) => Number(Boolean(a.c)) - Number(Boolean(b.c)));
   }
 
-  function enclosedByPath(mesh, path) {
-    const boundary = new Set(path);
-    const outside = mesh.boundary.flatMap(edge => edge.face < 0 ? [edge] : edge.twin.face < 0 ? [edge.twin] : []);
-    const inside = new Map([[-1, false]]);
-    const queue = [-1];
-    // Crossing the closed outline toggles the fill, including when it surrounds a hole.
-    for (let i = 0; i < queue.length; i++) {
-      const id = queue[i];
-      for (const edge of id < 0 ? outside : mesh.faces[id].edges) {
-        const neighbor = edge.twin.face;
-        if (inside.has(neighbor)) continue;
-        const crossed = boundary.has(edge) || boundary.has(edge.twin);
-        inside.set(neighbor, inside.get(id) !== crossed);
-        queue.push(neighbor);
-      }
+  function partitionByPath(mesh, path) {
+    const cuts = new Set(path);
+    const { root, join } = components(mesh.faces.length);
+    // Reconnect template faces across every interior edge except the chosen cuts.
+    for (const edge of mesh.boundary) {
+      const a = edge.face;
+      const b = edge.twin.face;
+      if (a >= 0 && b >= 0 && !cuts.has(edge) && !cuts.has(edge.twin)) join(a, b);
     }
-    return [...inside].filter(([, filled]) => filled).map(([id]) => id);
+    const partitions = new Map();
+    for (const { id } of mesh.faces) {
+      const component = root(id);
+      if (!partitions.has(component)) partitions.set(component, []);
+      partitions.get(component).push(id);
+    }
+    return [...partitions.values()];
   }
 
   const number = n => Number(n.toFixed(7));
@@ -741,6 +740,6 @@ globalThis.GlyphGeometry = (() => {
     return { draft, geometry: next, glyphs: nextGlyphs };
   }
 
-  return { arrange, trace, outlineVertices, path, pointConnections, enclosedByPath, regionAt, regionsAlong, inheritedFaces, adaptGlyphs,
+  return { arrange, trace, outlineVertices, path, pointConnections, partitionByPath, regionAt, regionsAlong, inheritedFaces, adaptGlyphs,
     simplify, strokeParts, point, number, signedArea };
 })();

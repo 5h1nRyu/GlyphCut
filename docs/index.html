@@ -93,12 +93,10 @@
         </div>
         <p class="help" id="region-fill-help">点击区块切换填充，按住拖动可连续填充经过的区块。</p>
         <div id="point-fill-controls" hidden>
-          <p class="help">鼠标靠近时显示模板点。点回起点闭合，滚轮切换最后一段，右键撤回上一个点。</p>
+          <p class="help">沿模板连线选点。连线后，点击由连线与画布外框划出的分区，可填满或清空。滚轮切换最后一段，右键撤回上一个点。</p>
           <p class="help" id="point-fill-status" aria-live="polite" hidden></p>
           <div class="stack">
             <button class="button clear block" id="cycle-point-connection" type="button" hidden>切换连线</button>
-            <button class="button accent block" id="fill-point-outline" type="button" disabled>填充围合区域</button>
-            <button class="button block" id="clear-point-outline" type="button" disabled>取消围合区域填充</button>
           </div>
         </div>
         <p class="help" id="glyph-disabled-help" hidden>斜纹区块已禁用。</p>

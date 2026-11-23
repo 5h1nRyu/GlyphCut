@@ -39,7 +39,7 @@
   let glyphTool = "regions";
   const outlinePoints = [];
   const outlineSteps = [];
-  let outlineRegions = new Set();
+  let pointRegions = [];
   let hoveredOutlinePoint = null;
   let paint = null;
   let exportingPng = false;
@@ -201,7 +201,7 @@
   function resetOutline() {
     outlinePoints.length = 0;
     outlineSteps.length = 0;
-    outlineRegions.clear();
+    pointRegions = [];
     hoveredOutlinePoint = null;
   }
 
@@ -402,8 +402,14 @@
     if (node) overlay?.querySelector(`[data-outline-point="${node.id}"]`)?.classList.add("hovered");
   }
 
-  function renderPointFill(geometry, selected, disabled) {
+  function renderPointFill(geometry, selected) {
     const closed = outlineClosed();
+    const regions = pointRegions.map(({ ids, path }, index) => {
+      if (!ids.length) return "";
+      const pressed = ids.every(id => selected.has(id)) ? "true" : ids.some(id => selected.has(id)) ? "mixed" : "false";
+      return `<path class="outline-region" d="${path}" fill-rule="nonzero" data-point-region="${index}"
+        tabindex="0" role="button" aria-label="画布分区 ${index + 1}" aria-pressed="${pressed}"/>`;
+    }).join("");
     const selectedNodes = new Set(outlinePoints);
     const steps = outlineSteps.map((step, i) => {
       const connection = chosenConnection(step);
@@ -421,28 +427,19 @@
         data-outline-point="${node.id}" cx="${x}" cy="${y}" r="${radius}" tabindex="0" role="button"
         aria-label="模板点 ${G.number(x)}, ${G.number(y)}" aria-pressed="${chosen}"/>`;
     }).join("");
-    $("point-fill-overlay").innerHTML = `<g aria-hidden="true">${steps}</g>${points}`;
+    $("point-fill-overlay").innerHTML = `${regions}<g aria-hidden="true">${steps}</g>${points}`;
 
     const last = outlineSteps.at(-1);
-    let fillable = false;
-    let removable = false;
-    for (const id of outlineRegions) {
-      if (disabled.has(id)) continue;
-      if (selected.has(id)) removable = true;
-      else fillable = true;
-    }
     const status = $("point-fill-status");
     const details = [];
     if (last?.options.length > 1) {
       const type = chosenConnection(last)[0].c ? "曲线" : "直线";
       details.push(`最后一段 ${type} ${last.index + 1}/${last.options.length}`);
     }
-    if (closed) details.push(fillable || removable ? "轮廓已闭合。" : "围合区域内没有可编辑的区块。");
+    if (closed) details.push("轮廓已闭合。");
     status.textContent = details.join(" · ");
     status.hidden = !details.length;
     $("cycle-point-connection").hidden = !(last?.options.length > 1);
-    $("fill-point-outline").disabled = !fillable;
-    $("clear-point-outline").disabled = !removable;
   }
 
   function renderBoard() {
@@ -468,8 +465,8 @@
       const interactive = pickable ? `data-${markRegions ? "exclude-region" : "region"}="${face.id}" tabindex="0" role="button"
         aria-label="${markRegions ? "禁用" : ""}区块 ${face.id + 1}" aria-pressed="${markRegions ? excluded : picked}"` :
         'pointer-events="none"';
-      return `<path class="region${pickable ? " pickable" : ""}${picked ? " picked" : ""}${excluded ? " excluded" : ""}"
-        d="${face.path}" fill="${colors[face.id % colors.length]}" fill-rule="nonzero"
+      return `<path class="region${pointMode ? " point-guide" : ""}${pickable ? " pickable" : ""}${picked ? " picked" : ""}${excluded ? " excluded" : ""}"
+        d="${face.path}" fill="${pointMode ? "#f8fafc" : colors[face.id % colors.length]}" fill-rule="nonzero"
         ${interactive}></path>`;
     }).join("") ?? "";
     const showHit = tool === "select" || tool === "erase";
@@ -523,11 +520,12 @@
       ${pointMode ? '<g id="point-fill-overlay"></g>' : ""}
       <g id="draft-overlay" pointer-events="none"></g>`;
     if (glyphMode) renderGlyphVertices(geometry, selected);
-    if (pointMode && geometry) renderPointFill(geometry, selected, disabled);
+    if (pointMode && geometry) renderPointFill(geometry, selected);
     draftOverlay();
     if (focused?.region !== undefined) board.querySelector(`[data-region="${focused.region}"]`)?.focus({ preventScroll: true });
     if (focused?.excludeRegion !== undefined) board.querySelector(`[data-exclude-region="${focused.excludeRegion}"]`)?.focus({ preventScroll: true });
     if (focused?.outlinePoint !== undefined) board.querySelector(`[data-outline-point="${focused.outlinePoint}"]`)?.focus({ preventScroll: true });
+    if (focused?.pointRegion !== undefined) board.querySelector(`[data-point-region="${focused.pointRegion}"]`)?.focus({ preventScroll: true });
   }
 
   function updateHelp() {
@@ -679,9 +677,12 @@
   }
 
   function refreshOutline() {
-    outlineRegions = outlineClosed()
-      ? new Set(G.enclosedByPath(getGeometry(project.template), outlineSteps.flatMap(chosenConnection)))
-      : new Set();
+    const geometry = getGeometry(project.template);
+    const disabled = new Set(project.disabledRegions);
+    pointRegions = outlineSteps.length ? G.partitionByPath(geometry, outlineSteps.flatMap(chosenConnection)).map(ids => ({
+      path: G.path(G.trace(geometry, new Set(ids))),
+      ids: ids.filter(id => !disabled.has(id))
+    })) : [];
     renderBoard();
   }
 
@@ -708,13 +709,15 @@
     refreshOutline();
   }
 
-  function applyPointOutline(fill) {
+  function togglePointRegion(index) {
+    const region = pointRegions[index];
+    if (!region?.ids.length) return;
     const picks = new Set(project.glyphs[project.character] ?? []);
-    for (const id of outlineRegions) {
-      if (fill) picks.add(id);
-      else picks.delete(id);
+    if (region.ids.every(id => picks.has(id))) {
+      for (const id of region.ids) picks.delete(id);
+    } else {
+      for (const id of region.ids) picks.add(id);
     }
-    resetOutline();
     updatePicks(picks);
   }
 
@@ -919,14 +922,14 @@
     updateHelp();
   });
   board.addEventListener("click", event => {
-    const { region, excludeRegion, outlinePoint } = event.target.dataset;
+    const { region, excludeRegion, outlinePoint, pointRegion } = event.target.dataset;
     if (pointFillActive()) {
       const geometry = getGeometry(project.template);
-      if (event.detail === 0) {
-        selectOutlinePoint(geometry, geometry.boundaryPoints.find(node => node.id === Number(outlinePoint)));
-        return;
-      }
-      selectOutlinePoint(geometry, nearestOutlinePoint(geometry, event));
+      const node = event.detail === 0
+        ? geometry.boundaryPoints.find(point => point.id === Number(outlinePoint))
+        : outlineClosed() ? null : nearestOutlinePoint(geometry, event);
+      if (node) selectOutlinePoint(geometry, node);
+      else if (pointRegion !== undefined) togglePointRegion(Number(pointRegion));
       return;
     }
     if (excludeRegion !== undefined) toggleDisabledRegion(Number(excludeRegion));
@@ -934,13 +937,14 @@
   });
   board.addEventListener("keydown", event => {
     if (event.key !== "Enter" && event.key !== " ") return;
-    const { region, excludeRegion, outlinePoint } = event.target.dataset;
-    if (region === undefined && excludeRegion === undefined && outlinePoint === undefined) return;
+    const { region, excludeRegion, outlinePoint, pointRegion } = event.target.dataset;
+    if (region === undefined && excludeRegion === undefined && outlinePoint === undefined && pointRegion === undefined) return;
     event.preventDefault();
     if (outlinePoint !== undefined) {
       const geometry = getGeometry(project.template);
       selectOutlinePoint(geometry, geometry.boundaryPoints.find(node => node.id === Number(outlinePoint)));
-    } else if (excludeRegion !== undefined) toggleDisabledRegion(Number(excludeRegion));
+    } else if (pointRegion !== undefined) togglePointRegion(Number(pointRegion));
+    else if (excludeRegion !== undefined) toggleDisabledRegion(Number(excludeRegion));
     else toggleRegion(Number(region));
   });
 
@@ -1040,8 +1044,6 @@
     cyclePointConnection(Math.sign(event.deltaY));
   }, { passive: false });
   $("cycle-point-connection").addEventListener("click", () => cyclePointConnection(1));
-  $("fill-point-outline").addEventListener("click", () => applyPointOutline(true));
-  $("clear-point-outline").addEventListener("click", () => applyPointOutline(false));
 
   function simplifiedTemplate() {
     const before = getGeometry(project.template);
