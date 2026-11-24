@@ -139,7 +139,7 @@
 }
 .desktop-brand, .desktop-window-controls { display: flex; align-items: center; }
 .desktop-brand { gap: 9px; font-size: 13px; font-weight: 700; }
-.desktop-brand .mark { width: 16px; height: 16px; gap: 2px; }
+.desktop-brand-mark { width: 16px; height: 16px; }
 .desktop-window-controls { height: 100%; }
 .desktop-window-controls button {
   display: grid;
@@ -251,6 +251,7 @@
   padding: 42px clamp(52px, 8vw, 126px) 40px;
 }
 .desktop-library { overflow: hidden; }
+.desktop-library-content { scrollbar-width: none; }
 .desktop-library-outgoing { position: absolute; inset: 0; pointer-events: none; }
 .desktop-menu-heading, .desktop-cards, .desktop-library .desktop-empty,
 .desktop-resolve-content > * { max-width: 1400px; margin-inline: auto; }
@@ -403,10 +404,26 @@
 .desktop-dialog-option input { margin: 0; accent-color: #52800b; }
 .desktop-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
 #desktop-project-name-label { margin-top: 16px; }
-.desktop-import-file { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
-.desktop-import-file button { flex: none; }
-.desktop-import-file output { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: .875rem; }
-#desktop-import-dialog.file-drag-over { border-color: #80a234; background: #f7fbe9; }
+.desktop-import-dropzone {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 132px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px dashed #a3afbf;
+  border-radius: 8px;
+  background: #f6f8fb;
+  color: #34445a;
+  font-size: .875rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.desktop-import-dropzone svg { width: 24px; height: 24px; }
+.desktop-import-dropzone:hover,
+.file-drag-over .desktop-import-dropzone { border-color: #80a234; background: #f7fbe9; }
 #desktop-import-name-label, #desktop-import-template-label { margin-top: 14px; }
 .desktop-project-note { color: var(--muted); font-size: .875rem; }
 .desktop-font-scope .desktop-project-note { margin: 0; }

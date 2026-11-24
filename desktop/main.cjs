@@ -14,6 +14,7 @@ const files = new Map([
   ["/truetype.js", "text/javascript; charset=utf-8"],
   ["/workspace.js", "text/javascript; charset=utf-8"],
   ["/workspace.css", "text/css; charset=utf-8"],
+  ["/glyphcut.ico", "image/x-icon"],
   ["/studio.js", "text/javascript; charset=utf-8"]
 ]);
 const fileTypes = new Map([
@@ -125,6 +126,7 @@ function createWindow() {
     minWidth: 850,
     minHeight: 600,
     frame: false,
+    ...(process.platform === "win32" ? { icon: join(__dirname, "dist", "glyphcut.ico") } : {}),
     backgroundColor: "#edf0f5",
     show: false,
     webPreferences: {

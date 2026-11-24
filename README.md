@@ -1,20 +1,33 @@
 # 字形切片 · GlyphCut
 
-从网格上的直线和曲线制作模板，再按区块或闭合轮廓设计字形。支持导出 TrueType 字体，以及 SVG、PNG 字形图。
+字形切片是一款以网格模板设计字形的 Windows 桌面应用。用直线和曲线把画布切成区块，再为拉丁字母和数字填充区块。同一套模板可以用来设计多套字体。
 
-- [打开网页版](https://5h1nryu.github.io/GlyphCut/)
-- [下载 Windows x64 免安装版](https://github.com/5h1nRyu/GlyphCut/releases)
+[下载 Windows x64 免安装版](https://github.com/5h1nRyu/GlyphCut/releases/latest/download/GlyphCut-Windows-x64.zip) · [发行记录](https://github.com/5h1nRyu/GlyphCut/releases) · [网页版试用](https://5h1nryu.github.io/GlyphCut/)
 
-Windows 版下载后完整解压，运行 `GlyphCut.exe`。程序启动后打开模板菜单，在具体模板页面可以创建字体。模板和字体分别保存于 `%APPDATA%\Glyph Cut\workspace`。网页的自动保存按浏览器和网址区分，可通过网页的「保存项目」和「导入」迁移。
+## 快速开始
 
-## 本地运行与打包
+1. 下载 ZIP，完整解压到同一目录，运行 `GlyphCut.exe`。
+2. 在模板菜单新建或导入模板，用网格上的直线和曲线划分区块。
+3. 使用模板创建字体，逐字填充区块，然后预览排版并导出。
 
-- 网页入口是 `docs/index.html`。可以用 `python3 -m http.server 8000 --directory docs` 本地预览。
-- 在 GitHub 的「Actions → 打包 Windows x64」中点「Run workflow」。构建完成后，从该次运行的「Artifacts」下载 `GlyphCut-Windows-x64.zip`，也可把这个文件上传到 Release。
-- 在仓库根目录运行 `python3 desktop/package-windows.py` 也可生成程序包。已有 Electron 压缩包时，可运行 `python3 desktop/package-windows.py electron-v45.4.1-win32-x64.zip` 跳过下载。脚本会校验 Electron，生成的程序可离线运行。
+## 主要功能
 
-## Windows 程序更新
+- **模板编辑**支持可调网格、曲线、区块禁用和自动简化。
+- **字形设计**支持按区块填充，也可沿模板边界选点并闭合轮廓后填充。
+- **导入与导出**支持拖入模板和字体项目 JSON，并导出 TTF 字体、SVG 或 PNG 字形图。
+- **本地工作**支持自动保存和离线编辑。项目存放在 `%APPDATA%\Glyph Cut\workspace`。可在窗口右上角检查更新。
 
-- 右上角可以检查更新。程序从公开的 GitHub Releases 下载 Windows x64 压缩包，校验后可重启应用更新。首次从旧版切换到支持更新的版本时，解压新的 ZIP 再打开。
-- 发布时先更新 `desktop/package.json` 的版本号，再从对应提交打包，将 `GlyphCut-Windows-x64.zip` 附加到同版本的正式 Release。比如程序版本 `1.1.0` 对应标签 `v1.1.0`。
-- 模板或字体卡片右下角可删除该项目。删除模板后，关联字体继续使用各自内嵌的模板，并可照常编辑和导出。
+## 从源码打包
+
+在仓库根目录使用 Python 3.12 或更新版本运行以下命令，生成 `GlyphCut-Windows-x64.zip`。
+
+```sh
+python -m pip install -r desktop/build-requirements.txt
+python desktop/package-windows.py
+```
+
+已有 Electron ZIP 时，可将其路径作为打包脚本的第一个参数。也可在 GitHub Actions 中手动运行「打包 Windows x64」，从运行结果下载构建产物。
+
+## 许可证
+
+GlyphCut 以 [MIT 许可证](LICENSE) 发布。Electron 运行时的许可证随免安装包提供。

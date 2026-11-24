@@ -3,7 +3,7 @@
   <symbol id="desktop-copy-icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 6V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h1"/></symbol>
 </svg>
 <header class="desktop-titlebar">
-  <div class="desktop-brand"><span class="mark" aria-hidden="true"><b></b><b></b><b></b><b></b></span>字形切片</div>
+  <div class="desktop-brand"><img class="desktop-brand-mark" src="glyphcut.ico" alt="">字形切片</div>
   <div class="desktop-window-controls">
     <button id="desktop-update" class="desktop-update-button" type="button" hidden>检查更新</button>
     <button id="desktop-minimize" type="button" aria-label="最小化" title="最小化"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5h10"/></svg></button>
@@ -92,12 +92,11 @@
 <dialog id="desktop-import-dialog" class="desktop-dialog" aria-labelledby="desktop-import-title">
   <form id="desktop-import-form">
     <header><h2 id="desktop-import-title"></h2></header>
-    <div class="desktop-import-file">
-      <button id="desktop-import-choose" class="button" type="button" autofocus>选择 JSON 文件</button>
-      <input id="desktop-import-file" type="file" accept=".json,application/json" hidden>
-      <output id="desktop-import-filename" aria-live="polite"></output>
-    </div>
-    <p class="desktop-project-note" id="desktop-import-drop-note" hidden>也可将模板 JSON 文件拖到此弹窗。</p>
+    <button id="desktop-import-choose" class="desktop-import-dropzone" type="button" autofocus>
+      <svg aria-hidden="true"><use href="#i-import"/></svg>
+      <span id="desktop-import-filename" aria-live="polite">选择 JSON 文件</span>
+    </button>
+    <input id="desktop-import-file" type="file" accept=".json,application/json" hidden>
     <label id="desktop-import-name-label" class="desktop-template-label" hidden>
       <span id="desktop-import-name-caption"></span>
       <input id="desktop-import-name" maxlength="100" spellcheck="false">

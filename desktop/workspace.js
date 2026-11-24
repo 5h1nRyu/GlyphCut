@@ -370,7 +370,7 @@
   }
 
   async function slideMenu(next) {
-    if (menu.hidden || page === next || matchMedia("(prefers-reduced-motion: reduce)").matches) return showMenu(next);
+    if (menu.hidden || page === next) return showMenu(next);
     const content = menu.querySelector(".desktop-library-content");
     const outgoing = content.cloneNode(true);
     const scrollTop = content.scrollTop;
@@ -451,11 +451,10 @@
     let submitting = false;
     let selection = 0;
     let errorMessage = "";
-    filename.textContent = "";
+    filename.textContent = "选择 JSON 文件";
     picker.value = "";
     standalone.checked = false;
     $("desktop-import-title").textContent = kind === "font" ? "导入外部字体" : "导入外部模板";
-    $("desktop-import-drop-note").hidden = kind !== "template";
 
     function refresh() {
       const includesTemplate = Boolean(candidate?.font && standalone.checked);
@@ -480,10 +479,10 @@
       const ticket = ++selection;
       candidate = undefined;
       errorMessage = "";
-      filename.textContent = files.length === 1 ? file.name : "";
+      filename.textContent = files.length === 1 ? file.name : "选择 JSON 文件";
       refresh();
       try {
-        if (files.length !== 1) throw new Error("请一次导入一个模板文件。");
+        if (files.length !== 1) throw new Error("请一次导入一个文件。");
         if (file.size > 8_000_000) throw new Error("文件超过 8 MB。");
         const contents = await file.text();
         if (listeners.signal.aborted || ticket !== selection) return;
@@ -508,22 +507,20 @@
       picker.value = "";
       selectFile(files);
     }, options);
-    if (kind === "template") {
-      dialog.addEventListener("dragover", event => {
-        if (!event.dataTransfer.types.includes("Files")) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = submitting ? "none" : "copy";
-        dialog.classList.toggle("file-drag-over", !submitting);
-      }, options);
-      dialog.addEventListener("dragleave", event => {
-        if (!dialog.contains(event.relatedTarget)) dialog.classList.remove("file-drag-over");
-      }, options);
-      dialog.addEventListener("drop", event => {
-        event.preventDefault();
-        dialog.classList.remove("file-drag-over");
-        selectFile([...event.dataTransfer.files]);
-      }, options);
-    }
+    dialog.addEventListener("dragover", event => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = submitting ? "none" : "copy";
+      dialog.classList.toggle("file-drag-over", !submitting);
+    }, options);
+    dialog.addEventListener("dragleave", event => {
+      if (!dialog.contains(event.relatedTarget)) dialog.classList.remove("file-drag-over");
+    }, options);
+    dialog.addEventListener("drop", event => {
+      event.preventDefault();
+      dialog.classList.remove("file-drag-over");
+      selectFile([...event.dataTransfer.files]);
+    }, options);
     form.addEventListener("input", event => {
       if (event.target === picker) return;
       errorMessage = "";
@@ -844,7 +841,7 @@
     fill.classList.add("split");
     fill.before(settings);
     const actions = element("section", "desktop-glyph-actions");
-    const goToTemplate = element("button", "button block", "前往模板");
+    const goToTemplate = element("button", "button block", "修改模板");
     goToTemplate.type = "button";
     goToTemplate.id = "desktop-go-to-template";
     goToTemplate.setAttribute("aria-haspopup", "dialog");
