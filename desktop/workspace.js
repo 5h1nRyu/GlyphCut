@@ -5,6 +5,7 @@
   const G = globalThis.GlyphGeometry;
   const $ = id => document.getElementById(id);
   const menu = $("desktop-menu");
+  const menuContent = menu.querySelector(".desktop-library-content");
   const editorBar = $("desktop-editor-bar");
   const templateSetup = $("desktop-template-setup");
   const fontSetup = $("desktop-font-setup");
@@ -35,6 +36,7 @@
   let closing = false;
   let allowUnload = false;
   let refreshSample;
+  let stopMenuScroll;
   let templates = new Map();
   let fonts = new Map();
 
@@ -315,6 +317,7 @@
   }
 
   function setPage(next) {
+    stopMenuScroll?.();
     page = next;
     menu.hidden = next !== "templates" && next !== "fonts";
     editorBar.hidden = !editing();
@@ -367,8 +370,7 @@
       }
       cards.append(card("导入外部字体", "", icon("i-import"), () => importProject("font"), "desktop-card-new desktop-card-import"));
     }
-    const content = menu.querySelector(".desktop-library-content");
-    content.scrollTop = 0;
+    menuContent.scrollTop = 0;
     if (!busy) title.focus({ preventScroll: true });
   }
 
@@ -436,7 +438,7 @@
 
   async function slideMenu(next) {
     if (menu.hidden || page === next) return showMenu(next);
-    const content = menu.querySelector(".desktop-library-content");
+    const content = menuContent;
     const outgoing = content.cloneNode(true);
     const scrollTop = content.scrollTop;
     for (const node of outgoing.querySelectorAll("[id]")) node.removeAttribute("id");
@@ -455,6 +457,55 @@
     } finally {
       outgoing.remove();
     }
+  }
+
+  function initializeMenuScroll() {
+    const element = menuContent;
+    const maxScroll = () => element.scrollHeight - element.clientHeight;
+    let frame = null;
+    let position = 0;
+    let destination = 0;
+    let lastTime = 0;
+
+    function stop() {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+    }
+
+    function step(time) {
+      destination = Math.min(destination, maxScroll());
+      const remaining = destination - position;
+      if (Math.abs(remaining) < 1) {
+        element.scrollTop = destination;
+        frame = null;
+        return;
+      }
+      // Exponential easing preserves momentum across consecutive wheel events.
+      const elapsed = Math.min(48, Math.max(0, time - lastTime));
+      position += remaining * (1 - Math.exp(-elapsed / 105));
+      element.scrollTop = position;
+      lastTime = time;
+      frame = requestAnimationFrame(step);
+    }
+
+    menu.addEventListener("wheel", event => {
+      if (!event.deltaY || event.ctrlKey || maxScroll() <= 0) return;
+      event.preventDefault();
+      const units = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 :
+        event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? element.clientHeight : 1;
+      if (frame === null) {
+        position = element.scrollTop;
+        destination = position;
+        lastTime = performance.now();
+        frame = requestAnimationFrame(step);
+      } else if (event.deltaY * (destination - position) < 0) {
+        destination = position;
+      }
+      destination = Math.min(maxScroll(), Math.max(0, destination + event.deltaY * units));
+    }, { passive: false });
+    menu.addEventListener("pointerdown", stop, true);
+    menu.addEventListener("dragstart", stop, true);
+    return stop;
   }
 
   function readImport(value, filename, kind) {
@@ -958,20 +1009,36 @@
 
   function showCharacterGroups(show) {
     const button = $("desktop-edit-character-groups");
-    button.textContent = show ? "完成" : "修改";
+    const label = show ? "完成字库范围修改" : "修改字库范围";
+    button.title = label;
+    button.setAttribute("aria-label", label);
     button.setAttribute("aria-expanded", show);
+    button.querySelector("use").setAttribute("href", show ? "#desktop-done-icon" : "#desktop-pencil-icon");
     $("desktop-character-groups").hidden = !show;
     $("character-tabs").hidden = show;
     $("characters").hidden = show;
-    if (!show) positionChoice($("character-tabs"));
+    if (show) {
+      const selected = project().characterGroups;
+      for (const input of $("desktop-character-groups").querySelectorAll("input")) {
+        input.checked = selected.includes(input.value);
+      }
+    } else positionChoice($("character-tabs"));
   }
 
-  function refreshCharacterGroups() {
-    const selected = project().characterGroups;
-    for (const input of $("desktop-character-groups").querySelectorAll("input")) {
-      input.checked = selected.includes(input.value);
-      input.disabled = input.checked && selected.length === 1;
+  async function finishCharacterGroups() {
+    const selected = [...$("desktop-character-groups").querySelectorAll(":checked")].map(input => input.value);
+    const removed = studio.glyphsRemovedByScope(selected);
+    if (!selected.length || removed.length) {
+      const isEmpty = !selected.length;
+      $("desktop-scope-title").textContent = isEmpty ? "请选择字库范围" : "删除已绘制的字形？";
+      $("desktop-scope-detail").textContent = isEmpty ? "请至少保留一个类别。" :
+        `本次修改将删除 ${removed.length} 个已绘制的字形（${removed.join("、")}）。`;
+      $("desktop-scope-cancel").textContent = isEmpty ? "知道了" : "取消";
+      $("desktop-scope-confirm").hidden = isEmpty;
+      if (await showDialog("desktop-scope-dialog") !== "delete") return;
     }
+    studio.setCharacterGroups(selected);
+    showCharacterGroups(false);
   }
 
   function positionChoice(container) {
@@ -1199,12 +1266,13 @@
     initializeExports();
     initializeGlyphControls();
     initializeCardSorting();
+    stopMenuScroll = initializeMenuScroll();
     const scopeButton = $("desktop-edit-character-groups");
     const scope = $("desktop-character-groups");
     scopeButton.hidden = false;
-    scopeButton.addEventListener("click", () => showCharacterGroups(scope.hidden));
-    scope.addEventListener("change", () => {
-      studio.setCharacterGroups([...scope.querySelectorAll(":checked")].map(input => input.value));
+    scopeButton.addEventListener("click", () => {
+      if (scope.hidden) showCharacterGroups(true);
+      else run(finishCharacterGroups);
     });
     const choiceSizes = new ResizeObserver(entries => {
       for (const { target } of entries) positionChoice(target);
@@ -1229,7 +1297,7 @@
     history.className = "desktop-history";
     for (const button of history.children) button.className = "button";
     $("desktop-export-project").before(history);
-    for (const id of ["desktop-delete-dialog", "desktop-retain-font", "desktop-project-dialog", "desktop-jump-dialog"]) {
+    for (const id of ["desktop-delete-dialog", "desktop-retain-font", "desktop-project-dialog", "desktop-jump-dialog", "desktop-scope-dialog"]) {
       $(id).addEventListener("keydown", event => event.stopPropagation());
     }
     $("desktop-template-identity").hidden = false;
@@ -1322,7 +1390,7 @@
   }
 
   globalThis.GlyphCutWorkspace = {
-    start, markChanged, editing, sampleText, validEditorName, positionChoice, refreshCharacterGroups,
+    start, markChanged, editing, sampleText, validEditorName, positionChoice,
     createTemplate: dimensions => run(() => createTemplate(dimensions)),
     openFontSetup: () => run(openFontSetup),
     simplifyFont: () => run(simplifyFont),

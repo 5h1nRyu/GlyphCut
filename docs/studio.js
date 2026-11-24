@@ -640,7 +640,6 @@
       renderFillChoices();
       $("glyph-count").textContent = `${size} / ${charactersFor(project).length}`;
       renderCharacterLibrary();
-      workspace?.refreshCharacterGroups();
       $("export-ttf").disabled = !size;
       $("export-all-svg").disabled = !size;
       $("export-all-png").disabled = !size || exportingPng;
@@ -685,9 +684,15 @@
     if (activeCharacter) characters.querySelector(`[data-char="${activeCharacter}"]`)?.focus({ preventScroll: true });
   }
 
+  function glyphsRemovedByScope(characterGroups) {
+    return designedCharacters().filter(character => !characterGroups.includes(groupFor(character)));
+  }
+
   function setCharacterGroups(characterGroups) {
     if (!characterGroups.length || pack(characterGroups) === pack(project.characterGroups)) return;
+    const removed = glyphsRemovedByScope(characterGroups);
     change(() => {
+      for (const character of removed) delete project.glyphs[character];
       project.characterGroups = characterGroups;
       if (!characterGroups.includes(groupFor(project.character))) {
         project.character = charactersFor(project)[0];
@@ -1342,7 +1347,7 @@ ${paths}
     if (workspace) {
       await workspace.start({
         project: () => project, geometry: getGeometry, blankDraft, validateSpec, notify, download, safeName, simplifiedTemplate,
-        charactersFor, setCharacterGroups,
+        charactersFor, glyphsRemovedByScope, setCharacterGroups,
         prepareTemplate: () => { if (!ready()) generate(); },
         open: fields => {
           project = readProject({ ...newProject(), ...fields, format: "glyph-cut-v1" });

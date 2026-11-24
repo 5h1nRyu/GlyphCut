@@ -188,9 +188,12 @@
     <div class="panel-inner" id="glyph-preview" hidden>
       <section>
         <div class="section-head glyph-library-head">
-          <h2>字库</h2><span id="glyph-count"></span>
+          <h2>字库</h2>
           <button id="desktop-edit-character-groups" class="button" type="button" aria-expanded="false"
-            aria-controls="desktop-character-groups" hidden>修改</button>
+            aria-controls="desktop-character-groups" aria-label="修改字库范围" title="修改字库范围" hidden>
+            <svg aria-hidden="true"><use href="#desktop-pencil-icon"/></svg>
+          </button>
+          <span id="glyph-count"></span>
         </div>
         <div id="character-tabs" class="character-tabs" aria-label="字符类别">
           <button type="button" data-group="upper" class="selected">大写</button>

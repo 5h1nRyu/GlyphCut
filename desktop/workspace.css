@@ -125,12 +125,13 @@
   background: #eaf5d6;
   box-shadow: none;
 }
-.desktop-font-editing .glyph-library-head h2 { margin-right: auto; }
+.desktop-font-editing .glyph-library-head #glyph-count { margin-left: auto; }
 .desktop-font-editing .glyph-library-head .button {
-  min-height: 27px;
-  padding: 3px 7px;
-  font-size: .75rem;
+  min-height: 26px;
+  width: 26px;
+  padding: 3px;
 }
+.desktop-font-editing .glyph-library-head .button svg { width: 15px; height: 15px; }
 .desktop-font-editing #desktop-character-groups { margin: 12px 0 0; }
 .desktop-font-editing #desktop-character-groups label { padding-inline: 8px; }
 .desktop-font-editing #point-fill-status { margin-top: 6px; }
@@ -289,7 +290,7 @@
   padding: 42px clamp(52px, 8vw, 126px) 40px;
 }
 .desktop-library { overflow: hidden; }
-.desktop-library-content { scrollbar-width: none; }
+.desktop-library-content { scrollbar-width: none; overscroll-behavior-y: contain; }
 .desktop-library-outgoing { position: absolute; inset: 0; pointer-events: none; }
 .desktop-menu-heading, .desktop-cards, .desktop-library .desktop-empty,
 .desktop-resolve-content > * { max-width: 1400px; margin-inline: auto; }
