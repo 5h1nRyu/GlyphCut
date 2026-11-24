@@ -187,13 +187,22 @@
     </div>
     <div class="panel-inner" id="glyph-preview" hidden>
       <section>
-        <div class="section-head"><h2>字库</h2><span id="glyph-count"></span></div>
+        <div class="section-head glyph-library-head">
+          <h2>字库</h2><span id="glyph-count"></span>
+          <button id="desktop-edit-character-groups" class="button" type="button" aria-expanded="false"
+            aria-controls="desktop-character-groups" hidden>修改</button>
+        </div>
         <div id="character-tabs" class="character-tabs" aria-label="字符类别">
           <button type="button" data-group="upper" class="selected">大写</button>
           <button type="button" data-group="lower">小写</button>
           <button type="button" data-group="digits">数字</button>
         </div>
         <div class="characters" id="characters" aria-label="选择字符"></div>
+        <fieldset id="desktop-character-groups" class="desktop-font-scope" aria-label="字体使用范围" hidden>
+          <label><input type="checkbox" value="upper">大写字母 <span>A–Z</span></label>
+          <label><input type="checkbox" value="lower">小写字母 <span>a–z</span></label>
+          <label><input type="checkbox" value="digits">数字 <span>0–9</span></label>
+        </fieldset>
         <button type="button" class="button clear block" id="clear-glyph">清空当前字形</button>
       </section>
       <section class="split">

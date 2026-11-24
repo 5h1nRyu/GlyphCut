@@ -1,7 +1,7 @@
 {
   "name": "glyph-cut",
   "productName": "Glyph Cut",
-  "version": "1.1.18",
+  "version": "1.1.19",
   "license": "MIT",
   "main": "main.cjs",
   "private": true

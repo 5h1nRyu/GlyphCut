@@ -12,6 +12,7 @@
   };
   const groupNames = Object.keys(groups);
   const alphabet = Object.values(groups).join("");
+  const charactersFor = value => (value.characterGroups ?? groupNames).map(group => groups[group]).join("");
   const colors = ["#d9ebfd", "#e6f2dc", "#f8e3d1", "#ebe3fa", "#f7dfe7", "#d8eee8", "#f8efca", "#e0e5fb"];
   const axes = ["width", "height", "stepX", "stepY"];
   const cursorHelp = {
@@ -130,7 +131,7 @@
       const selected = Array.isArray(value.characterGroups)
         ? groupNames.filter(group => value.characterGroups.includes(group)) : groupNames;
       restored.characterGroups = selected.length ? selected : groupNames;
-      characters = restored.characterGroups.map(group => groups[group]).join("");
+      characters = charactersFor(restored);
       restored.character = characters[0];
     }
     restored.draft = validateSpec(value.draft);
@@ -140,7 +141,7 @@
       const isRegionId = id => Number.isInteger(id) && id >= 0 && id < available;
       const disabled = new Set(Array.isArray(value.disabledRegions) ? value.disabledRegions.filter(isRegionId) : []);
       restored.disabledRegions = [...disabled].sort((a, b) => a - b);
-      for (const ch of characters) {
+      for (const ch of alphabet) {
         const ids = value.glyphs?.[ch];
         if (!Array.isArray(ids)) continue;
         const valid = ids.filter(id => isRegionId(id) && !disabled.has(id));
@@ -453,7 +454,6 @@
     board.classList.toggle("select-cursor", project.mode === "template" && tool === "select");
     sizeStage();
     const glyphMode = project.mode === "glyph";
-    const pointMode = pointFillActive();
     const markRegions = !glyphMode && tool === "exclude";
     const geometry = ready() ? getGeometry(project.draft) : null;
     const selected = new Set(project.glyphs[project.character] ?? []);
@@ -461,13 +461,13 @@
     if (paint) for (const id of paint.regions) selected.add(id);
     const regions = geometry?.faces.map(face => {
       const excluded = disabled.has(face.id);
-      const pickable = markRegions || (glyphMode && !pointMode && !excluded);
+      const pickable = markRegions || (glyphMode && !excluded);
       const picked = glyphMode && !excluded && selected.has(face.id);
       const interactive = pickable ? `data-${markRegions ? "exclude-region" : "region"}="${face.id}" tabindex="0" role="button"
         aria-label="${markRegions ? "禁用" : ""}区块 ${face.id + 1}" aria-pressed="${markRegions ? excluded : picked}"` :
         'pointer-events="none"';
-      return `<path class="region${pointMode ? " point-guide" : ""}${pickable ? " pickable" : ""}${picked ? " picked" : ""}${excluded ? " excluded" : ""}"
-        d="${face.path}" fill="${pointMode ? "#f8fafc" : colors[face.id % colors.length]}" fill-rule="nonzero"
+      return `<path class="region${pickable ? " pickable" : ""}${picked ? " picked" : ""}${excluded ? " excluded" : ""}"
+        d="${face.path}" fill="${colors[face.id % colors.length]}" fill-rule="nonzero"
         ${interactive}></path>`;
     }).join("") ?? "";
     const showHit = tool === "select" || tool === "erase";
@@ -518,15 +518,27 @@
       <rect width="${width}" height="${height}" fill="none" stroke="#9badc6" stroke-width="1.25" vector-effect="non-scaling-stroke" pointer-events="none"/>
       ${handles}
       ${glyphMode ? '<g id="glyph-vertex-overlay" pointer-events="none" aria-hidden="true"></g>' : ""}
-      ${pointMode ? '<g id="point-fill-overlay"></g>' : ""}
+      ${glyphMode ? '<g id="point-fill-overlay"></g>' : ""}
       <g id="draft-overlay" pointer-events="none"></g>`;
     if (glyphMode) renderGlyphVertices(geometry, selected);
-    if (pointMode && geometry) renderPointFill(geometry, selected);
+    renderFillOverlay(geometry, selected);
     draftOverlay();
     if (focused?.region !== undefined) board.querySelector(`[data-region="${focused.region}"]`)?.focus({ preventScroll: true });
     if (focused?.excludeRegion !== undefined) board.querySelector(`[data-exclude-region="${focused.excludeRegion}"]`)?.focus({ preventScroll: true });
     if (focused?.outlinePoint !== undefined) board.querySelector(`[data-outline-point="${focused.outlinePoint}"]`)?.focus({ preventScroll: true });
     if (focused?.pointRegion !== undefined) board.querySelector(`[data-point-region="${focused.pointRegion}"]`)?.focus({ preventScroll: true });
+  }
+
+  function renderFillOverlay(geometry, selected) {
+    const pointMode = pointFillActive();
+    board.classList.toggle("point-fill", pointMode);
+    for (const region of board.querySelectorAll("[data-region]")) {
+      region.classList.toggle("pickable", !pointMode);
+      region.setAttribute("tabindex", pointMode ? "-1" : "0");
+      region.toggleAttribute("inert", pointMode);
+    }
+    if (pointMode && geometry) renderPointFill(geometry, selected);
+    else $("point-fill-overlay")?.replaceChildren();
   }
 
   function updateHelp() {
@@ -597,12 +609,8 @@
     if (!glyphMode) {
       if (tool === "exclude" && !confirmed) tool = "line";
       if (!workspace) axes.forEach(id => { $(id).value = project.draft[id]; });
-      $("tools").querySelectorAll("button").forEach(button => {
-        if (button.dataset.tool === "exclude") button.disabled = !confirmed;
-        const active = button.dataset.tool === tool;
-        button.classList.toggle("active", active);
-        button.setAttribute("aria-pressed", active);
-      });
+      $("tools").querySelector("[data-tool=exclude]").disabled = !confirmed;
+      renderChoices($("tools"), "tool", tool, "active");
       const geometry = confirmed ? getGeometry(project.draft) : null;
       $("stroke-count").textContent = project.draft.strokes.length;
       const disabledCount = project.disabledRegions.length;
@@ -626,38 +634,13 @@
       if (!workspace) $("baseline").value = project.baseline;
       $("spacing").value = project.spacing;
       $("sample-text").value = project.autoSample ? "" : project.sample;
-      const size = Object.keys(project.glyphs).length;
-      $("simplify-template").disabled = !size;
+      const size = designedCharacters().length;
+      $("simplify-template").disabled = !Object.keys(project.glyphs).length;
       $("glyph-disabled-help").hidden = !project.disabledRegions.length;
-      $("region-fill-help").hidden = pointFillActive();
-      $("point-fill-controls").hidden = !pointFillActive();
-      $("glyph-tools").querySelectorAll("button").forEach(button => {
-        const active = button.dataset.glyphTool === glyphTool;
-        button.classList.toggle("selected", active);
-        button.setAttribute("aria-pressed", active);
-      });
-      const characterGroups = project.characterGroups ?? groupNames;
-      const capacity = characterGroups.reduce((total, key) => total + groups[key].length, 0);
-      $("glyph-count").textContent = `${size} / ${capacity}`;
-      const tabs = $("character-tabs");
-      if (workspace) tabs.style.gridTemplateColumns = `repeat(${characterGroups.length}, minmax(0, 1fr))`;
-      tabs.querySelectorAll("button").forEach(button => {
-        button.hidden = !characterGroups.includes(button.dataset.group);
-        const active = button.dataset.group === group;
-        button.classList.toggle("selected", active);
-        button.setAttribute("aria-pressed", active);
-      });
-      const activeCharacter = document.activeElement?.dataset.char;
-      const characters = $("characters");
-      const scrollTop = characters.dataset.group === group ? characters.scrollTop : 0;
-      characters.innerHTML = [...groups[group]].map(ch =>
-        `<button class="character${ch === project.character ? " active" : ""}${project.glyphs[ch]?.length ? " designed" : ""}"
-          type="button" aria-pressed="${ch === project.character}" data-char="${ch}">${ch}</button>`).join("");
-      if (workspace) {
-        characters.dataset.group = group;
-        characters.scrollTop = scrollTop;
-      }
-      if (activeCharacter) characters.querySelector(`[data-char="${activeCharacter}"]`)?.focus({ preventScroll: true });
+      renderFillChoices();
+      $("glyph-count").textContent = `${size} / ${charactersFor(project).length}`;
+      renderCharacterLibrary();
+      workspace?.refreshCharacterGroups();
       $("export-ttf").disabled = !size;
       $("export-all-svg").disabled = !size;
       $("export-all-png").disabled = !size || exportingPng;
@@ -666,6 +649,52 @@
       renderSample();
     }
     renderBoard();
+  }
+
+  function renderChoices(container, key, selection, activeClass = "selected") {
+    for (const button of container.children) {
+      const active = button.dataset[key] === selection;
+      button.classList.toggle(activeClass, active);
+      button.setAttribute("aria-pressed", active);
+    }
+    workspace?.positionChoice(container);
+  }
+
+  function renderFillChoices() {
+    $("region-fill-help").hidden = pointFillActive();
+    $("point-fill-controls").hidden = !pointFillActive();
+    renderChoices($("glyph-tools"), "glyphTool", glyphTool);
+  }
+
+  function renderCharacterLibrary() {
+    const characterGroups = project.characterGroups ?? groupNames;
+    const tabs = $("character-tabs");
+    if (workspace) tabs.style.gridTemplateColumns = `repeat(${characterGroups.length}, minmax(0, 1fr))`;
+    for (const button of tabs.children) button.hidden = !characterGroups.includes(button.dataset.group);
+    renderChoices(tabs, "group", group);
+    const activeCharacter = document.activeElement?.dataset.char;
+    const characters = $("characters");
+    const scrollTop = characters.dataset.group === group ? characters.scrollTop : 0;
+    characters.innerHTML = [...groups[group]].map(ch =>
+      `<button class="character${ch === project.character ? " active" : ""}${project.glyphs[ch]?.length ? " designed" : ""}"
+        type="button" aria-pressed="${ch === project.character}" data-char="${ch}">${ch}</button>`).join("");
+    if (workspace) {
+      characters.dataset.group = group;
+      characters.scrollTop = scrollTop;
+    }
+    if (activeCharacter) characters.querySelector(`[data-char="${activeCharacter}"]`)?.focus({ preventScroll: true });
+  }
+
+  function setCharacterGroups(characterGroups) {
+    if (!characterGroups.length || pack(characterGroups) === pack(project.characterGroups)) return;
+    change(() => {
+      project.characterGroups = characterGroups;
+      if (!characterGroups.includes(groupFor(project.character))) {
+        project.character = charactersFor(project)[0];
+        resetOutline();
+      }
+      if (!characterGroups.includes(group)) group = groupFor(project.character);
+    });
   }
 
   function updatePicks(picks) {
@@ -794,7 +823,7 @@
   board.addEventListener("pointerdown", event => {
     if (event.button !== 0) return;
     if (project.mode === "glyph") {
-      if (paint || event.target.dataset.region === undefined) return;
+      if (pointFillActive() || paint || event.target.dataset.region === undefined) return;
       paint = { pointer: event.pointerId, x: event.clientX, y: event.clientY,
         start: Number(event.target.dataset.region), last: pointerPosition(event),
         regions: new Set(), disabled: new Set(project.disabledRegions) };
@@ -1047,7 +1076,9 @@
     if (!button || glyphTool === button.dataset.glyphTool) return;
     glyphTool = button.dataset.glyphTool;
     resetPointer();
-    render();
+    renderFillChoices();
+    const geometry = getGeometry(project.template);
+    renderFillOverlay(geometry, new Set(project.glyphs[project.character]));
   });
   (workspace ? drawing : stage).addEventListener("wheel", event => {
     const cycle = pointFillActive() && !event.ctrlKey && outlineSteps.at(-1)?.options.length > 1;
@@ -1103,8 +1134,12 @@
 
   $("character-tabs").addEventListener("click", event => {
     const tab = event.target.closest("[data-group]");
-    if (!tab || tab.hidden) return;
+    if (!tab || tab.hidden || group === tab.dataset.group) return;
     group = tab.dataset.group;
+    if (workspace) {
+      renderCharacterLibrary();
+      return;
+    }
     if (!groups[group].includes(project.character)) project.character = groups[group][0];
     resetOutline();
     persist();
@@ -1191,6 +1226,10 @@
     return G.trace(geometry, new Set(project.glyphs[character]));
   }
 
+  function designedCharacters() {
+    return [...charactersFor(project)].filter(character => project.glyphs[character]?.length);
+  }
+
   function downloadSvg(width, height, paths, filename) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
 ${paths}
@@ -1205,7 +1244,7 @@ ${paths}
     downloadSvg(width, height, path, `Glyph-${project.character}.svg`);
   });
   function glyphSheet() {
-    const characters = [...alphabet].filter(character => project.glyphs[character]?.length);
+    const characters = designedCharacters();
     if (!characters.length) return null;
     const { width, height } = project.template;
     const geometry = getGeometry(project.template);
@@ -1260,14 +1299,14 @@ ${paths}
     } finally {
       canvas.width = canvas.height = 0;
       exportingPng = false;
-      button.disabled = !Object.keys(project.glyphs).length;
+      button.disabled = !designedCharacters().length;
     }
   });
   $("export-ttf").addEventListener("click", () => {
     try {
       const { width, height } = project.template;
       const geometry = getGeometry(project.template);
-      const outlines = Object.keys(project.glyphs).sort().map(ch => [ch, glyphOutline(geometry, ch)]);
+      const outlines = designedCharacters().sort().map(ch => [ch, glyphOutline(geometry, ch)]);
       // Preserve the saved font metrics when exporting older desktop projects.
       const font = TTF.build({ name: project.fontName, width, height, spacing: project.spacing,
         baseline: height * project.baseline / 100, outlines });
@@ -1303,6 +1342,7 @@ ${paths}
     if (workspace) {
       await workspace.start({
         project: () => project, geometry: getGeometry, blankDraft, validateSpec, notify, download, safeName, simplifiedTemplate,
+        charactersFor, setCharacterGroups,
         prepareTemplate: () => { if (!ready()) generate(); },
         open: fields => {
           project = readProject({ ...newProject(), ...fields, format: "glyph-cut-v1" });

@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("glyphCutDesktop", {
   loadProjects: () => ipcRenderer.invoke("project:load"),
+  reorderProjects: (kind, ids) => ipcRenderer.invoke("project:reorderProjects", kind, ids),
   saveTemplate: template => ipcRenderer.invoke("project:saveTemplate", template),
   copyProject: (kind, id, name) => ipcRenderer.invoke("project:copyProject", kind, id, name),
   createFont: (templateId, options) => ipcRenderer.invoke("project:createFont", templateId, options),

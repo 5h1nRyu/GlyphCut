@@ -15,7 +15,6 @@
   const setupName = $("desktop-setup-name");
   const setupCanvas = $("desktop-setup-preview-canvas");
   const dimensions = ["width", "height", "stepX", "stepY"];
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const svgNS = "http://www.w3.org/2000/svg";
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const sameShape = (a, b) => same(a.spec, b.spec) && same(a.disabledRegions, b.disabledRegions);
@@ -47,7 +46,9 @@
       sample: p.sample, autoSample: p.autoSample, characterGroups: p.characterGroups, character: p.character };
   };
   function sampleText(font) {
-    const characters = [...(font.autoSample ? alphabet : font.sample)].filter(ch => font.glyphs[ch]?.length);
+    const available = studio.charactersFor(font);
+    const characters = [...(font.autoSample ? available : font.sample)]
+      .filter(ch => available.includes(ch) && font.glyphs[ch]?.length);
     return (font.autoSample ? characters.slice(0, 3) : characters).join("");
   }
   const editing = () => page === "template" || page === "font";
@@ -234,7 +235,9 @@
     }));
     const actions = element("div", "desktop-card-actions");
     actions.append(copy, remove);
-    wrapper.append(card(record.name, status, image, open, className), actions);
+    const main = card(record.name, status, image, open, className);
+    main.draggable = true;
+    wrapper.append(main, actions);
     return wrapper;
   }
 
@@ -367,6 +370,68 @@
     const content = menu.querySelector(".desktop-library-content");
     content.scrollTop = 0;
     if (!busy) title.focus({ preventScroll: true });
+  }
+
+  function initializeCardSorting() {
+    const cards = $("desktop-cards");
+    let source;
+    let target;
+    const cardAt = event => event.target.closest(".desktop-card-slot");
+    function highlight(card) {
+      if (card === target) return;
+      target?.classList.remove("drop-target");
+      target = card;
+      target?.classList.add("drop-target");
+    }
+    function endDrag() {
+      highlight(null);
+      source?.classList.remove("drag-source");
+      source = null;
+    }
+    cards.addEventListener("dragstart", event => {
+      const card = cardAt(event);
+      if (!card || !event.target.closest(".desktop-card[draggable=true]") || busy) {
+        event.preventDefault();
+        return;
+      }
+      source = card;
+      source.classList.add("drag-source");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("application/x-glyphcut-project", source.dataset.projectId);
+    });
+    cards.addEventListener("dragover", event => {
+      if (!source) return;
+      const next = cardAt(event);
+      highlight(next === source ? null : next);
+      if (!target) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    });
+    cards.addEventListener("dragleave", event => {
+      if (!cards.contains(event.relatedTarget)) highlight(null);
+    });
+    cards.addEventListener("dragend", endDrag);
+    cards.addEventListener("drop", event => {
+      if (!source) return;
+      event.preventDefault();
+      const moved = source;
+      const destination = cardAt(event);
+      endDrag();
+      if (!destination || destination === moved) return;
+      const collection = page;
+      const projects = collection === "templates" ? templates : fonts;
+      const order = [...cards.querySelectorAll(".desktop-card-slot")].map(card => card.dataset.projectId);
+      const from = order.indexOf(moved.dataset.projectId);
+      const to = order.indexOf(destination.dataset.projectId);
+      order.splice(to, 0, order.splice(from, 1)[0]);
+      run(async () => {
+        await desktop.reorderProjects(collection, order);
+        const reordered = order.map(id => [id, projects.get(id)]);
+        if (collection === "templates") templates = new Map(reordered);
+        else fonts = new Map(reordered);
+        cards.insertBefore(moved, from < to ? destination.nextElementSibling : destination);
+      });
+    });
   }
 
   async function slideMenu(next) {
@@ -565,9 +630,8 @@
 
   async function reload() {
     const data = await desktop.loadProjects();
-    const sortByName = (a, b) => a.name.localeCompare(b.name, "zh-CN") || a.id.localeCompare(b.id);
-    templates = new Map(data.templates.filter(item => readable(item)).sort(sortByName).map(item => [item.id, item]));
-    fonts = new Map(data.fonts.filter(item => readable(item.template)).sort(sortByName).map(item => [item.id, item]));
+    templates = new Map(data.templates.filter(item => readable(item)).map(item => [item.id, item]));
+    fonts = new Map(data.fonts.filter(item => readable(item.template)).map(item => [item.id, item]));
     if (data.warnings.length || templates.size < data.templates.length || fonts.size < data.fonts.length) {
       studio.notify("部分本地项目文件无法读取。");
     }
@@ -676,6 +740,7 @@
     const goToTemplate = $("desktop-go-to-template");
     goToTemplate.disabled = !templates.has(font.template.id);
     goToTemplate.title = goToTemplate.disabled ? "此字体使用内嵌模板，没有关联的独立模板。" : "";
+    showCharacterGroups(false);
     studio.open({ ...font, fontName: font.name, draft: font.template.spec, template: font.template.spec,
       disabledRegions: font.template.disabledRegions, mode: "glyph" });
     savedEditorState = structuredClone(editorState());
@@ -891,6 +956,35 @@
     }, { capture: true });
   }
 
+  function showCharacterGroups(show) {
+    const button = $("desktop-edit-character-groups");
+    button.textContent = show ? "完成" : "修改";
+    button.setAttribute("aria-expanded", show);
+    $("desktop-character-groups").hidden = !show;
+    $("character-tabs").hidden = show;
+    $("characters").hidden = show;
+    if (!show) positionChoice($("character-tabs"));
+  }
+
+  function refreshCharacterGroups() {
+    const selected = project().characterGroups;
+    for (const input of $("desktop-character-groups").querySelectorAll("input")) {
+      input.checked = selected.includes(input.value);
+      input.disabled = input.checked && selected.length === 1;
+    }
+  }
+
+  function positionChoice(container) {
+    if (!container.clientWidth) return;
+    const selected = container.querySelector('[aria-pressed="true"]');
+    if (!selected) return;
+    container.style.setProperty("--choice-x", `${selected.offsetLeft}px`);
+    container.style.setProperty("--choice-y", `${selected.offsetTop}px`);
+    container.style.setProperty("--choice-width", `${selected.offsetWidth}px`);
+    container.style.setProperty("--choice-height", `${selected.offsetHeight}px`);
+    container.classList.add("choice-positioned");
+  }
+
   function resolve(font, editAfterResolution) {
     resolvingFont = font;
     editWhenResolved = editAfterResolution;
@@ -911,7 +1005,7 @@
     const glyphs = G.adaptGlyphs(font.template, current, font.glyphs);
     const geometry = studio.geometry(current.spec);
     const list = $("desktop-adapted-glyphs");
-    const chars = [...alphabet].filter(ch => font.glyphs[ch]?.length || glyphs[ch]?.length);
+    const chars = [...studio.charactersFor(font)].filter(ch => font.glyphs[ch]?.length || glyphs[ch]?.length);
     list.replaceChildren(...chars.map(ch => {
       const glyph = element("figure", "desktop-glyph-preview");
       const svg = art(current.spec);
@@ -1104,6 +1198,25 @@
     initializeUpdates();
     initializeExports();
     initializeGlyphControls();
+    initializeCardSorting();
+    const scopeButton = $("desktop-edit-character-groups");
+    const scope = $("desktop-character-groups");
+    scopeButton.hidden = false;
+    scopeButton.addEventListener("click", () => showCharacterGroups(scope.hidden));
+    scope.addEventListener("change", () => {
+      studio.setCharacterGroups([...scope.querySelectorAll(":checked")].map(input => input.value));
+    });
+    const choiceSizes = new ResizeObserver(entries => {
+      for (const { target } of entries) positionChoice(target);
+    });
+    for (const id of ["tools", "glyph-tools", "character-tabs"]) {
+      const container = $(id);
+      container.classList.add("desktop-sliding-choice");
+      choiceSizes.observe(container);
+    }
+    window.addEventListener("keydown", event => {
+      if (event.key === "Tab") event.preventDefault();
+    }, { capture: true });
     $("use-template").textContent = "使用此模板创建字体";
     $("simplify-template").textContent = "自动简化模板";
     $("clear-template").classList.replace("clear", "accent");
@@ -1209,7 +1322,7 @@
   }
 
   globalThis.GlyphCutWorkspace = {
-    start, markChanged, editing, sampleText, validEditorName,
+    start, markChanged, editing, sampleText, validEditorName, positionChoice, refreshCharacterGroups,
     createTemplate: dimensions => run(() => createTemplate(dimensions)),
     openFontSetup: () => run(openFontSetup),
     simplifyFont: () => run(simplifyFont),

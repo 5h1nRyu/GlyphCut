@@ -106,8 +106,9 @@ input:not([type=checkbox],[type=radio],[type=file]) {width:100%; min-width:0; he
 .region.picked {fill:#21364f!important}
 .region.picked:hover {fill:#35567e!important}
 .region.excluded {fill:url(#excluded-region-hatch);stroke:#758297}
-.region.point-guide {stroke:#9badc6; stroke-opacity:.5}
-.region.point-guide.picked {stroke:#21364f; stroke-opacity:1}
+.point-fill .region {pointer-events:none}
+.point-fill .region:not(.excluded) {fill:#f8fafc; stroke:#9badc6; stroke-opacity:.5}
+.point-fill .region.picked {stroke:#21364f; stroke-opacity:1}
 .outline-region {fill:transparent; cursor:pointer}
 .outline-region:hover,.outline-region:focus-visible {fill:#008d9e24; outline:none}
 #point-fill-overlay:has(.outline-point.hovered) .outline-region:hover {fill:transparent; cursor:default}

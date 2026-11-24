@@ -95,6 +95,44 @@
 .desktop-font-editing #font-settings .fields { margin: 9px 0 0; gap: 8px; }
 .desktop-font-editing #font-settings input { height: 34px; }
 .desktop-font-editing #glyph-tools { margin: 9px 0 0; }
+.desktop-sliding-choice { position: relative; isolation: isolate; }
+.desktop-sliding-choice > button { position: relative; }
+.desktop-sliding-choice.choice-positioned::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--choice-width);
+  height: var(--choice-height);
+  transform: translate(var(--choice-x), var(--choice-y));
+  transition: transform 210ms ease, width 210ms ease, height 210ms ease;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 1px 2px #22334b21;
+  pointer-events: none;
+}
+.desktop-sliding-choice.choice-positioned > button.selected,
+.desktop-sliding-choice.choice-positioned > .tool.active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+#tools.choice-positioned > .tool:not(.active) { background: transparent; }
+#tools.choice-positioned > .tool:not(.active):hover { background: #eaf0f680; }
+#tools.choice-positioned::before {
+  border: 1px solid #b8d990;
+  border-radius: 6px;
+  background: #eaf5d6;
+  box-shadow: none;
+}
+.desktop-font-editing .glyph-library-head h2 { margin-right: auto; }
+.desktop-font-editing .glyph-library-head .button {
+  min-height: 27px;
+  padding: 3px 7px;
+  font-size: .75rem;
+}
+.desktop-font-editing #desktop-character-groups { margin: 12px 0 0; }
+.desktop-font-editing #desktop-character-groups label { padding-inline: 8px; }
 .desktop-font-editing #point-fill-status { margin-top: 6px; }
 .desktop-font-editing #point-fill-controls .stack { margin-top: 6px; }
 .desktop-glyph-actions { display: grid; gap: 6px; margin-top: auto; }
@@ -359,6 +397,12 @@
 }
 
 .desktop-card-slot { position: relative; display: grid; min-width: 0; }
+.desktop-card-slot .desktop-card[draggable="true"] { cursor: grab; }
+.desktop-card-slot.drag-source { opacity: .55; }
+.desktop-card-slot.drop-target .desktop-card {
+  outline: 2px solid #78a038;
+  outline-offset: 2px;
+}
 .desktop-card-slot .desktop-card-caption {
   grid-template-rows: auto minmax(30px, auto);
   padding-bottom: 8px;

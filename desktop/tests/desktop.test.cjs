@@ -108,7 +108,30 @@ test("new fonts and the legacy default use automatic samples while custom text s
   assert.equal(custom.sample, "ABC 123");
 });
 
-test("font creation and later edits enforce the saved character groups", async t => {
+test("template and font menu order is saved separately and survives project changes", async t => {
+  const root = await temporary(t);
+  const projects = createProjects(root);
+  const spec = { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] };
+  const first = await projects.saveTemplate({ name: "Template A", spec, disabledRegions: [] });
+  const second = await projects.saveTemplate({ name: "Template B", spec, disabledRegions: [] });
+  const firstFont = await projects.createFont(first.id, { name: "Font A" });
+  const secondFont = await projects.createFont(second.id, { name: "Font B" });
+  await projects.reorderProjects("templates", [second.id, first.id]);
+  await assert.rejects(projects.reorderProjects("templates", [second.id, second.id]), /项目排序/);
+  await assert.rejects(projects.reorderProjects("fonts", [first.id]), /项目已变更/);
+  const ids = records => records.map(record => record.id);
+  const initial = await createProjects(root).load();
+  assert.deepEqual(ids(initial.templates), [second.id, first.id]);
+  assert.deepEqual(ids(initial.fonts), [firstFont.id, secondFont.id]);
+  await projects.reorderProjects("fonts", [secondFont.id, firstFont.id]);
+  await projects.deleteTemplate(second.id);
+  const added = await projects.saveTemplate({ name: "Template 0", spec, disabledRegions: [] });
+  const updated = await createProjects(root).load();
+  assert.deepEqual(ids(updated.templates), [first.id, added.id]);
+  assert.deepEqual(ids(updated.fonts), [secondFont.id, firstFont.id]);
+});
+
+test("font creation and scope edits enforce the active groups while keeping hidden glyphs", async t => {
   const root = await temporary(t);
   const projects = createProjects(root);
   const spec = { width: 480, height: 600, stepX: 60, stepY: 60, strokes: [] };
@@ -123,6 +146,17 @@ test("font creation and later edits enforce the saved character groups", async t
   const [saved] = (await createProjects(root).load()).fonts;
   assert.deepEqual(saved.characterGroups, ["digits"]);
   assert.equal(saved.character, "9");
+
+  const expanded = await projects.saveFont(saved.id, { ...saved, characterGroups: ["digits", "upper"],
+    glyphs: { ...saved.glyphs, A: [0] }, character: "A" });
+  assert.deepEqual(expanded.font.characterGroups, ["upper", "digits"]);
+  await assert.rejects(projects.saveFont(saved.id, { ...expanded.font, characterGroups: [] }), /字形范围/);
+  await projects.saveFont(saved.id, { ...expanded.font, characterGroups: ["digits"], character: "9" });
+  const narrowed = (await createProjects(root).load()).fonts.find(record => record.id === saved.id);
+  assert.deepEqual(narrowed.characterGroups, ["digits"]);
+  assert.deepEqual(narrowed.glyphs, { "9": [0], A: [0] });
+  const restored = await projects.saveFont(saved.id, { ...narrowed, characterGroups: ["upper"], character: "A" });
+  assert.deepEqual(restored.font.glyphs.A, [0]);
 
   const legacy = await projects.createFont(template.id);
   delete legacy.characterGroups;

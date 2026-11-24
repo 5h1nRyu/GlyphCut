@@ -3,7 +3,7 @@
 const { randomUUID } = require("node:crypto");
 const { isDeepStrictEqual } = require("node:util");
 const { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } = require("node:fs/promises");
-const { join } = require("node:path");
+const { dirname, join } = require("node:path");
 
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const templateFormat = "glyph-cut-template";
@@ -14,6 +14,7 @@ const characterSets = {
   digits: "0123456789"
 };
 const allGroups = Object.keys(characterSets);
+const alphabet = Object.values(characterSets).join("");
 const nameKey = name => name.trim().normalize("NFC").toLowerCase();
 
 function projectName(name) {
@@ -52,7 +53,7 @@ function fontData(template, project, id) {
   const characters = characterGroups.map(group => characterSets[group]).join("");
   if (typeof name !== "string" || !name.trim() || name.length > 100 ||
       !glyphs || typeof glyphs !== "object" || Array.isArray(glyphs) ||
-      !Object.entries(glyphs).every(([ch, ids]) => ch.length === 1 && characters.includes(ch) &&
+      !Object.entries(glyphs).every(([ch, ids]) => ch.length === 1 && alphabet.includes(ch) &&
         Array.isArray(ids) && ids.every(index => Number.isInteger(index) && index >= 0)) ||
       !Number.isFinite(baseline) || baseline < 0 || baseline > 100 ||
       !Number.isFinite(spacing) || spacing < 0 || spacing > 8192 ||
@@ -85,18 +86,22 @@ function createProjects(root) {
     }
   }
 
-  async function write(kind, record) {
-    const filename = path(kind, record.id);
+  async function writeJson(filename, value) {
     const temporary = filename + ".tmp";
-    await mkdir(join(root, kind), { recursive: true });
+    await mkdir(dirname(filename), { recursive: true });
     try {
-      await writeFile(temporary, JSON.stringify(record, null, 2) + "\n", "utf8");
+      await writeFile(temporary, JSON.stringify(value, null, 2) + "\n", "utf8");
       await rename(temporary, filename);
     } finally {
       await rm(temporary, { force: true }).catch(() => {});
     }
-    return record;
+    return value;
   }
+
+  const write = (kind, record) => writeJson(path(kind, record.id), record);
+  const orderPath = kind => join(root, kind, "order.json");
+  const isProjectOrder = ids => Array.isArray(ids) && Array.from(ids).every(id => typeof id === "string" && uuid.test(id)) &&
+    new Set(ids).size === ids.length;
 
   function queue(operation) {
     const result = (pending ?? Promise.resolve()).catch(() => {}).then(operation);
@@ -123,6 +128,20 @@ function createProjects(root) {
       }
     }
     return items.sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || a.id.localeCompare(b.id));
+  }
+
+  async function orderedProjects(kind, warnings) {
+    const items = await list(kind, warnings);
+    try {
+      const ids = JSON.parse(await readFile(orderPath(kind), "utf8"));
+      if (!isProjectOrder(ids)) throw new Error("项目排序无效。");
+      const positions = new Map(ids.map((id, position) => [id, position]));
+      const fallback = ids.length;
+      items.sort((a, b) => (positions.get(a.id) ?? fallback) - (positions.get(b.id) ?? fallback));
+    } catch (error) {
+      if (error.code !== "ENOENT") warnings.push(kind + "/order.json");
+    }
+    return items;
   }
 
   async function requireRecord(kind, id) {
@@ -197,9 +216,16 @@ function createProjects(root) {
     async load() {
       await pending;
       const warnings = [];
-      const [templates, fonts] = await Promise.all([list("templates", warnings), list("fonts", warnings)]);
+      const [templates, fonts] = await Promise.all([orderedProjects("templates", warnings), orderedProjects("fonts", warnings)]);
       return { templates, fonts, warnings };
     },
+    reorderProjects: (kind, ids) => queue(async () => {
+      if (kind !== "templates" && kind !== "fonts") throw new Error("项目类型无效。");
+      if (!isProjectOrder(ids)) throw new Error("项目排序无效。");
+      const known = new Set((await list(kind, [])).map(record => record.id));
+      if (ids.some(id => !known.has(id))) throw new Error("项目已变更，请重新打开菜单。");
+      await writeJson(orderPath(kind), ids);
+    }),
     saveTemplate: input => queue(async () => {
       const previous = input.id ? await requireRecord("templates", input.id) : null;
       const template = templateData(input, input.id ?? randomUUID());
@@ -250,7 +276,7 @@ function createProjects(root) {
       const current = await read("templates", font.template.id);
       if (current && !templateMatches(font.template, current)) throw new Error("关联模板已更改，请先处理模板变更。");
       const template = current ?? font.template;
-      const fields = { ...changes, characterGroups: font.characterGroups, unconfirmed: font.unconfirmed };
+      const fields = { ...changes, characterGroups: changes.characterGroups ?? font.characterGroups, unconfirmed: font.unconfirmed };
       const next = fontData(template, fields, id);
       await requireUniqueName(next.name, font.name);
       return { font: await write("fonts", next) };
