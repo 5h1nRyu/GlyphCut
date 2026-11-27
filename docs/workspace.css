@@ -494,3 +494,61 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+#native-window-controls { display: flex; height: 100%; }
+.web-panel-switch, .web-cancel-point { display: none; }
+.web-app .sample-output { overflow-x: auto; }
+.web-card-moves {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+}
+.web-card-moves button { background: #fff; border: 1px solid #d3dce8; }
+.web-card-moves button:hover:not(:disabled) { background: #e1edfa; }
+.desktop-card-slot:is(:hover, :focus-within) .web-card-moves { opacity: 1; }
+.web-app .web-cancel-point { display: grid; padding-inline: 7px; white-space: nowrap; }
+
+@media (hover: none) {
+  .web-card-moves { opacity: 1; }
+}
+
+@media (max-width: 730px) {
+  .web-app.desktop-font-editing { overflow: auto; }
+  .web-app.desktop-editing .workbench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    height: auto;
+    padding: 8px;
+    gap: 8px;
+  }
+  .web-app.desktop-editing .workbench > .drawing {
+    order: -2;
+    height: clamp(280px, 52dvh, 550px);
+  }
+  .web-app .web-panel-switch { display: flex; order: -1; gap: 8px; }
+  .web-panel-switch .button { flex: 1; }
+  .web-panel-switch [aria-pressed="true"] { background: #eaf5d6; border-color: #b8d990; }
+  .web-app [data-mobile-panel="tools"] > .right,
+  .web-app [data-mobile-panel="preview"] > .left { display: none; }
+  .web-app #characters { flex: none; max-height: 260px; }
+  .web-app .desktop-library-content,
+  .web-app .desktop-resolve-content { padding-block: 22px; }
+}
+
+@media (max-width: 475px) {
+  .web-app .desktop-setup-columns { grid-template-columns: minmax(0, 1fr); }
+  .web-app .desktop-setup-preview { min-height: 185px; }
+  .web-app .desktop-editor-bar { flex-wrap: wrap; row-gap: 5px; }
+  .web-app .desktop-save-status { flex-basis: 100%; order: 1; }
+  .web-app .desktop-library-content { padding-inline: 44px; }
+  .web-app .desktop-edge-link { width: 30px; }
+  .web-app .statusbar { padding-inline: 6px; gap: 5px; font-size: .72rem; }
+  .web-app .workbar { padding-inline: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-app .desktop-sliding-choice.choice-positioned::before { transition: none; }
+}

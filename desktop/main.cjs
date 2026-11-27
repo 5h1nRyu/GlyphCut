@@ -12,6 +12,7 @@ const files = new Map([
   ["/style.css", "text/css; charset=utf-8"],
   ["/geometry.js", "text/javascript; charset=utf-8"],
   ["/truetype.js", "text/javascript; charset=utf-8"],
+  ["/web-projects.js", "text/javascript; charset=utf-8"],
   ["/workspace.js", "text/javascript; charset=utf-8"],
   ["/workspace.css", "text/css; charset=utf-8"],
   ["/glyphcut.ico", "image/x-icon"],
@@ -47,14 +48,7 @@ function registerFiles() {
     if (url.host !== "studio" || request.method !== "GET" || !type) {
       return new Response(null, { status: 404 });
     }
-    let data = await readFile(join(__dirname, "dist", basename(url.pathname)));
-    if (url.pathname === "/index.html") {
-      const shell = await readFile(join(__dirname, "workspace.html"), "utf8");
-      data = data.toString("utf8")
-        .replace('<script defer src="studio.js"></script>',
-          '<link rel="stylesheet" href="workspace.css"><script defer src="workspace.js"></script><script defer src="studio.js"></script>')
-        .replace("<body>", '<body class="desktop-app">' + shell);
-    }
+    const data = await readFile(join(__dirname, "dist", basename(url.pathname)));
     return new Response(data, { headers: { "Content-Type": type, "Content-Security-Policy": contentPolicy } });
   });
 

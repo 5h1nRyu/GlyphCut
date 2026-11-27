@@ -161,6 +161,26 @@
     return restored;
   }
 
+  function readLegacyProject() {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (!saved) return null;
+      const raw = JSON.parse(saved);
+      const restored = readProject(raw);
+      const defaults = newProject();
+      const fontName = restored.fontName.trim() || defaults.fontName;
+      const templateName = typeof raw.templateName === "string" && raw.templateName.trim()
+        ? raw.templateName.trim() : `${fontName} 模板`;
+      const hasFont = Boolean(restored.template && (raw.mode === "glyph" || Object.keys(restored.glyphs).length ||
+        fontName !== defaults.fontName || restored.baseline !== defaults.baseline ||
+        restored.spacing !== defaults.spacing || restored.sample !== defaults.sample));
+      const autoSample = raw.autoSample ?? (restored.sample === "" || restored.sample === defaults.sample);
+      return { ...restored, fontName, templateName, hasFont, autoSample };
+    } catch (error) {
+      throw new Error("旧网页版项目无法迁移。原始数据仍保留在浏览器中。", { cause: error });
+    }
+  }
+
   function persist() {
     if (workspace) {
       workspace.markChanged();
@@ -347,7 +367,12 @@
     return `<circle class="handle" cx="${p[0]}" cy="${p[1]}" r="${radius}" fill="${control ? "#bcccff" : "#fff"}" ${key}/>`;
   }
 
+  function updateCancelPoint() {
+    $("cancel-point").hidden = Boolean(desktop || !(pointFillActive() ? outlinePoints.length : pending));
+  }
+
   function draftOverlay() {
+    updateCancelPoint();
     const layer = $("draft-overlay");
     if (!layer) return;
     const coordinate = rawCursor && (pending?.b || drag || onBoard()) ? snap(rawCursor, project.draft) : null;
@@ -530,6 +555,7 @@
   }
 
   function renderFillOverlay(geometry, selected) {
+    updateCancelPoint();
     const pointMode = pointFillActive();
     board.classList.toggle("point-fill", pointMode);
     for (const region of board.querySelectorAll("[data-region]")) {
@@ -950,20 +976,24 @@
     updateHelp();
   });
 
-  (workspace ? drawing : board).addEventListener("contextmenu", event => {
+  function cancelPoint() {
     if (pointFillActive()) {
-      event.preventDefault();
       if (!outlinePoints.length) return;
       outlinePoints.pop();
       outlineSteps.pop();
       refreshOutline();
       return;
     }
-    if (project.mode !== "template" || (tool !== "line" && tool !== "curve")) return;
-    event.preventDefault();
     pending = pending?.b ? { a: pending.a } : null;
     draftOverlay();
     updateHelp();
+  }
+
+  $("cancel-point").addEventListener("click", cancelPoint);
+  (workspace ? drawing : board).addEventListener("contextmenu", event => {
+    if (!pointFillActive() && (project.mode !== "template" || (tool !== "line" && tool !== "curve"))) return;
+    event.preventDefault();
+    cancelPoint();
   });
   board.addEventListener("click", event => {
     const { region, excludeRegion, outlinePoint, pointRegion } = event.target.dataset;
@@ -1092,7 +1122,7 @@
       if (!delta) return;
       event.preventDefault();
       cyclePointConnection(Math.sign(delta));
-    } else if (workspace && event.deltaY) {
+    } else if (workspace && event.deltaY && (desktop || !event.ctrlKey)) {
       event.preventDefault();
       const units = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 :
         event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? stage.clientHeight : 1;
@@ -1182,20 +1212,48 @@
     });
   }
 
-  function download(data, type, filename) {
-    const blob = new Blob([data], { type });
-    if (desktop) {
-      return blob.arrayBuffer().then(bytes => desktop.saveFile(filename, bytes))
-        .catch(() => notify(`无法保存 ${filename}。请检查保存位置后重试。`));
+  async function saveTarget(filename, type) {
+    if (typeof window.showSaveFilePicker !== "function" || !navigator.userActivation?.isActive) return undefined;
+    try {
+      const extension = filename.slice(filename.lastIndexOf("."));
+      return await showSaveFilePicker({ suggestedName: filename, types: [{ accept: { [type.split(";")[0]]: [extension] } }] });
+    } catch (error) {
+      if (error.name === "AbortError") return null;
+      if (error.name === "SecurityError" || error.name === "NotAllowedError") return undefined;
+      throw error;
     }
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+
+  async function download(data, type, filename) {
+    try {
+      const target = desktop ? undefined : await saveTarget(filename, type);
+      if (target === null) return false;
+      const blob = new Blob([typeof data === "function" ? await data() : data], { type });
+      if (desktop) await desktop.saveFile(filename, await blob.arrayBuffer());
+      else if (target) {
+        const writable = await target.createWritable();
+        try {
+          await writable.write(blob);
+          await writable.close();
+        } catch (error) {
+          await writable.abort().catch(() => {});
+          throw error;
+        }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      }
+      return true;
+    } catch (error) {
+      notify(error.message || `无法保存 ${filename}。请检查保存位置后重试。`);
+      return false;
+    }
   }
   const safeName = name => name.trim().replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").replace(/^[. ]+|[. ]+$/g, "") || "Glyph Cut";
 
@@ -1288,17 +1346,19 @@ ${paths}
       const scale = Math.min(1, maxSide / Math.max(width, height), Math.sqrt(maxPixels / (width * height)));
       canvas.width = Math.min(maxSide, Math.ceil(width * scale));
       canvas.height = Math.min(maxSide, Math.ceil(height * scale));
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("无法创建 PNG 画布。");
-      context.fillStyle = "#000";
-      for (const { x, y, path } of glyphs) {
-        context.setTransform(scale, 0, 0, scale, x * scale, y * scale);
-        context.fill(new Path2D(path), "nonzero");
-      }
-      const png = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
-      if (!png) throw new Error("PNG 编码失败。");
-      download(png, "image/png", filename);
-      if (scale < 1) notify(`已按比例导出 ${canvas.width} × ${canvas.height} 像素的 PNG。`);
+      const saved = await download(async () => {
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("无法创建 PNG 画布。");
+        context.fillStyle = "#000";
+        for (const { x, y, path } of glyphs) {
+          context.setTransform(scale, 0, 0, scale, x * scale, y * scale);
+          context.fill(new Path2D(path), "nonzero");
+        }
+        const png = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+        if (!png) throw new Error("PNG 编码失败。");
+        return png;
+      }, "image/png", filename);
+      if (saved && scale < 1) notify(`已按比例导出 ${canvas.width} × ${canvas.height} 像素的 PNG。`);
     } catch (error) {
       notify(error.message);
     } finally {
@@ -1347,7 +1407,7 @@ ${paths}
     if (workspace) {
       await workspace.start({
         project: () => project, geometry: getGeometry, blankDraft, validateSpec, notify, download, safeName, simplifiedTemplate,
-        charactersFor, glyphsRemovedByScope, setCharacterGroups,
+        charactersFor, glyphsRemovedByScope, setCharacterGroups, readLegacyProject,
         prepareTemplate: () => { if (!ready()) generate(); },
         open: fields => {
           project = readProject({ ...newProject(), ...fields, format: "glyph-cut-v1" });

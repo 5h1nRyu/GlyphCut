@@ -20,7 +20,7 @@ RUNTIME_URL = f"https://github.com/electron/electron/releases/download/v{ELECTRO
 DESKTOP = Path(__file__).resolve().parent
 ROOT = DESKTOP.parent
 PACKAGE = "GlyphCut-Windows-x64"
-ICON = DESKTOP / "glyphcut.ico"
+ICON = ROOT / "docs" / "glyphcut.ico"
 
 
 def set_executable_icon(source: Path, destination: Path) -> None:
@@ -69,12 +69,10 @@ def package(runtime: Path, staging: Path) -> Path:
     app = target / "resources" / "app"
     (app / "dist").mkdir(parents=True)
     for filename in ("main.cjs", "preload.cjs", "projects.cjs", "updates.cjs", "portable-update.ps1",
-                     "workspace.html", "package.json"):
+                     "package.json"):
         copy2(DESKTOP / filename, app / filename)
-    for filename in ("workspace.js", "workspace.css"):
-        copy2(DESKTOP / filename, app / "dist" / filename)
-    copy2(ICON, app / "dist" / ICON.name)
-    for filename in ("index.html", "style.css", "geometry.js", "truetype.js", "studio.js"):
+    for filename in ("index.html", "style.css", "workspace.css", "geometry.js", "truetype.js",
+                     "web-projects.js", "workspace.js", "studio.js", ICON.name):
         copy2(ROOT / "docs" / filename, app / "dist" / filename)
     copy2(DESKTOP / "使用说明.txt", target / "使用说明.txt")
     copy2(ROOT / "LICENSE", target / "GlyphCut-LICENSE.txt")
