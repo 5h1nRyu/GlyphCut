@@ -2,6 +2,8 @@
 
 (() => {
   const desktop = globalThis.glyphCutDesktop;
+  const projects = desktop ?? globalThis.GlyphCutWebProjects;
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const G = globalThis.GlyphGeometry;
   const $ = id => document.getElementById(id);
   const menu = $("desktop-menu");
@@ -203,7 +205,7 @@
     copy.addEventListener("click", () => run(async () => {
       const duplicate = await promptProject({
         title: `拷贝${kindLabel}`, caption: "副本名称", name: suggestedName(record.name, "（副本）"), action: "创建副本"
-      }, name => desktop.copyProject(kind, record.id, name));
+      }, name => projects.copyProject(kind, record.id, name));
       if (!duplicate) return;
       await reload();
       showMenu(page);
@@ -219,7 +221,8 @@
     remove.setAttribute("aria-label", label);
     remove.append(icon("desktop-trash-icon"));
     remove.addEventListener("click", () => run(async () => {
-      const hasLinkedFonts = isTemplate && linkedFonts(record.id).length > 0;
+      const linked = isTemplate ? linkedFonts(record.id) : [];
+      const hasLinkedFonts = linked.length > 0;
       $("desktop-delete-title").textContent = label + "？";
       $("desktop-delete-detail").textContent = hasLinkedFonts ?
         "保留的字体会继续使用各自内嵌的模板。" : isTemplate ? "该模板将被删除。" : "该字体及其字形将被删除。";
@@ -227,7 +230,16 @@
       const option = $("desktop-delete-linked");
       option.checked = false;
       if (await showDialog("desktop-delete-dialog") !== "delete") return;
-      await desktop.deleteProject(kind, record.id, hasLinkedFonts && option.checked);
+      try {
+        await projects.deleteProject(kind, record.id, hasLinkedFonts && option.checked, record._revision,
+          linked.map(font => [font.id, font._revision]));
+      } catch (error) {
+        if (error.code === "project-conflict") {
+          await reload();
+          showMenu(page);
+        }
+        throw error;
+      }
       await reload();
       showMenu(page);
       studio.notify(`已${label}。`);
@@ -240,6 +252,27 @@
     const main = card(record.name, status, image, open, className);
     main.draggable = true;
     wrapper.append(main, actions);
+    if (!desktop) {
+      const moves = element("div", "web-card-moves");
+      for (const [delta, symbol, label] of [[-1, "↑", "前移"], [1, "↓", "后移"]]) {
+        const move = element("button", "desktop-card-action", symbol);
+        move.type = "button";
+        move.dataset.move = delta;
+        move.title = `${label}「${record.name}」`;
+        move.setAttribute("aria-label", move.title);
+        move.addEventListener("click", () => run(async () => {
+          const ids = [...(isTemplate ? templates : fonts).keys()];
+          if (await moveCard(record.id, ids.indexOf(record.id) + delta)) {
+            requestAnimationFrame(() => {
+              main.focus({ preventScroll: true });
+              main.scrollIntoView({ block: "nearest" });
+            });
+          }
+        }));
+        moves.append(move);
+      }
+      wrapper.append(moves);
+    }
     return wrapper;
   }
 
@@ -331,6 +364,7 @@
     document.body.classList.toggle("desktop-template-editing", next === "template");
     document.body.classList.toggle("desktop-font-editing", next === "font");
     document.body.classList.toggle("desktop-resolving", next === "resolve");
+    updateWebUnload();
   }
 
   function showMenu(next) {
@@ -352,7 +386,7 @@
       for (const template of templates.values()) {
         const linked = linkedFonts(template.id).length;
         cards.append(projectCard(template, "template", {
-          status: `${linked} 个关联字体`, image: templateArt(template), open: () => openTemplate(template)
+          status: `${linked} 个关联字体`, image: templateArt(template), open: () => openFromMenu(template, templates, openTemplate)
         }));
       }
       cards.append(card("创建新模板", "", icon("i-plus"), openTemplateSetup, "desktop-card-new"));
@@ -361,17 +395,65 @@
       for (const font of fonts.values()) {
         const stale = pendingTemplate(font);
         const linked = templates.get(font.template.id);
+        const status = stale ? "模板有更新" : linked?.name ?? `${font.template.name}（内嵌模板）`;
         cards.append(projectCard(font, "font", {
-          status: stale ? "模板有更新" : linked?.name ?? `${font.template.name}（内嵌模板）`,
+          status: !desktop && font.unconfirmed ? `草稿 · ${status}` : status,
           image: fontArt(font),
-          open: () => openFont(font),
+          open: () => openFromMenu(font, fonts, openFont),
           className: stale ? "pending" : ""
         }));
       }
       cards.append(card("导入外部字体", "", icon("i-import"), () => importProject("font"), "desktop-card-new desktop-card-import"));
     }
+    updateMoveButtons();
     menuContent.scrollTop = 0;
     if (!busy) title.focus({ preventScroll: true });
+  }
+
+  async function openFromMenu(record, collection, open) {
+    if (desktop) return open(record);
+    const kind = collection === templates ? "templates" : "fonts";
+    await reload();
+    const latest = (kind === "templates" ? templates : fonts).get(record.id);
+    if (latest) return open(latest);
+    showMenu(kind);
+    throw new Error("此项目已在其他标签页删除。");
+  }
+
+  function updateMoveButtons() {
+    if (desktop) return;
+    const cards = [...$("desktop-cards").querySelectorAll(".desktop-card-slot")];
+    cards.forEach((card, index) => {
+      card.querySelector('[data-move="-1"]').disabled = index === 0;
+      card.querySelector('[data-move="1"]').disabled = index === cards.length - 1;
+    });
+  }
+
+  async function moveCard(id, to) {
+    const collection = page;
+    const records = collection === "templates" ? templates : fonts;
+    const previous = [...records.keys()];
+    const from = previous.indexOf(id);
+    if (from < 0 || to < 0 || to >= previous.length || to === from) return false;
+    const order = [...previous];
+    order.splice(to, 0, order.splice(from, 1)[0]);
+    try {
+      await projects.reorderProjects(collection, order, previous);
+    } catch (error) {
+      if (error.code === "project-conflict") {
+        await reload();
+        showMenu(collection);
+      }
+      throw error;
+    }
+    const reordered = new Map(order.map(projectId => [projectId, records.get(projectId)]));
+    if (collection === "templates") templates = reordered;
+    else fonts = reordered;
+    const cards = $("desktop-cards");
+    const slots = cards.querySelectorAll(".desktop-card-slot");
+    cards.insertBefore(slots[from], from < to ? slots[to].nextElementSibling : slots[to]);
+    updateMoveButtons();
+    return true;
   }
 
   function initializeCardSorting() {
@@ -420,24 +502,13 @@
       const destination = cardAt(event);
       endDrag();
       if (!destination || destination === moved) return;
-      const collection = page;
-      const projects = collection === "templates" ? templates : fonts;
-      const order = [...cards.querySelectorAll(".desktop-card-slot")].map(card => card.dataset.projectId);
-      const from = order.indexOf(moved.dataset.projectId);
-      const to = order.indexOf(destination.dataset.projectId);
-      order.splice(to, 0, order.splice(from, 1)[0]);
-      run(async () => {
-        await desktop.reorderProjects(collection, order);
-        const reordered = order.map(id => [id, projects.get(id)]);
-        if (collection === "templates") templates = new Map(reordered);
-        else fonts = new Map(reordered);
-        cards.insertBefore(moved, from < to ? destination.nextElementSibling : destination);
-      });
+      const slots = [...cards.querySelectorAll(".desktop-card-slot")];
+      run(() => moveCard(moved.dataset.projectId, slots.indexOf(destination)));
     });
   }
 
   async function slideMenu(next) {
-    if (menu.hidden || page === next) return showMenu(next);
+    if (menu.hidden || page === next || (!desktop && reducedMotion.matches)) return showMenu(next);
     const content = menuContent;
     const outgoing = content.cloneNode(true);
     const scrollTop = content.scrollTop;
@@ -489,7 +560,7 @@
     }
 
     menu.addEventListener("wheel", event => {
-      if (!event.deltaY || event.ctrlKey || maxScroll() <= 0) return;
+      if (!event.deltaY || event.ctrlKey || maxScroll() <= 0 || (!desktop && reducedMotion.matches)) return;
       event.preventDefault();
       const units = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 :
         event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? element.clientHeight : 1;
@@ -513,6 +584,7 @@
       .replace(/[\uD800-\uDBFF]$/, "") || "导入项目";
     let source;
     let font;
+    let legacyDraft;
     if (value?.format === "glyph-cut-template") {
       source = value;
     } else if (value?.format === "glyph-cut-font" && value.template) {
@@ -520,6 +592,11 @@
       font = value;
     } else if (value?.format === "glyph-cut-v1") {
       source = { name: value.templateName, spec: value.template ?? value.draft, disabledRegions: value.disabledRegions };
+      if (!desktop && value.template && value.draft) {
+        const original = studio.validateSpec(value.template);
+        const draft = studio.validateSpec(value.draft);
+        if (!same(original, draft)) legacyDraft = draft;
+      }
       if (value.glyphs !== undefined) {
         font = { ...value, name: value.fontName, baseline: value.baseline ?? 86, spacing: value.spacing ?? 18,
           sample: value.sample ?? "", character: value.character ?? "A" };
@@ -547,7 +624,7 @@
       }
     }
     const fontName = typeof font?.name === "string" ? font.name.trim() : "";
-    return { name: font ? fontName || fallback : template.name, template, font };
+    return { name: font ? fontName || fallback : template.name, template, font, legacyDraft };
   }
 
   async function importProject(kind) {
@@ -652,9 +729,9 @@
       try {
         const importedName = checkNewName(name);
         saved = candidate.font
-          ? await desktop.importFont({ ...candidate.font, name: importedName, template: candidate.template },
-            standalone.checked ? checkNewName(templateName) : undefined)
-          : await desktop.saveTemplate({ ...candidate.template, name: importedName });
+          ? await projects.importFont({ ...candidate.font, name: importedName, template: candidate.template },
+            standalone.checked ? checkNewName(templateName) : undefined, candidate.legacyDraft)
+          : await projects.saveTemplate({ ...candidate.template, name: importedName }, undefined, candidate.legacyDraft);
         dialog.close();
       } catch (failure) {
         errorMessage = failure.message;
@@ -673,14 +750,15 @@
     if (!saved) return;
     await reload();
     await slideMenu(candidate.font ? "fonts" : "templates");
-    studio.notify(candidate.font ? "字体已导入。" : "模板已导入。");
+    const imported = candidate.font ? "字体已导入。" : "模板已导入。";
+    studio.notify(candidate.legacyDraft ? imported + "原有的未生成草稿已另存为模板。" : imported);
     requestAnimationFrame(() => {
       $("desktop-cards").querySelector(`[data-project-id="${saved.id}"] .desktop-card`)?.focus();
     });
   }
 
   async function reload() {
-    const data = await desktop.loadProjects();
+    const data = await projects.loadProjects();
     templates = new Map(data.templates.filter(item => readable(item)).map(item => [item.id, item]));
     fonts = new Map(data.fonts.filter(item => readable(item.template)).map(item => [item.id, item]));
     if (data.warnings.length || templates.size < data.templates.length || fonts.size < data.fonts.length) {
@@ -735,7 +813,7 @@
   async function createTemplate(dimensions) {
     const name = checkNewName(setupName);
     const spec = studio.validateSpec({ ...dimensions, strokes: [] });
-    const template = await desktop.saveTemplate({ name, spec, disabledRegions: [] });
+    const template = await projects.saveTemplate({ name, spec, disabledRegions: [] });
     templates.set(template.id, template);
     openTemplate(template);
   }
@@ -746,7 +824,11 @@
       "确认后将自动保存当前修改，并保留此字体项目。" : "确认后将自动保存当前修改。";
     if (await showDialog("desktop-jump-dialog") !== "jump") return;
     await saveManually();
-    open(record);
+    if (desktop) return open(record);
+    await reload();
+    const latest = (record.format === "glyph-cut-template" ? templates : fonts).get(record.id);
+    if (!latest) throw new Error("目标项目已在其他标签页删除。");
+    open(latest);
   }
 
   function renderLinkedFonts(template) {
@@ -798,7 +880,19 @@
     updateSaveStatus();
   }
 
+  function warnBeforeUnload(event) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+
+  function updateWebUnload() {
+    if (desktop) return;
+    if (saving || dirty()) window.addEventListener("beforeunload", warnBeforeUnload);
+    else window.removeEventListener("beforeunload", warnBeforeUnload);
+  }
+
   function updateSaveStatus() {
+    updateWebUnload();
     if (!editing()) return;
     const status = $("desktop-save-status");
     const unsaved = dirty();
@@ -822,11 +916,11 @@
     const state = structuredClone(editorState());
     const { spec, disabledRegions, ...fields } = state;
     if (page === "template") {
-      editingRecord = await desktop.saveTemplate({ id: editingRecord.id, ...fields, spec, disabledRegions });
+      editingRecord = await projects.saveTemplate({ id: editingRecord.id, ...fields, spec, disabledRegions }, editingRecord._revision);
       templates.set(editingRecord.id, editingRecord);
     } else {
       if (!fields.name) throw new Error("请输入字体名称。");
-      const result = await desktop.saveFont(editingRecord.id, fields);
+      const result = await projects.saveFont(editingRecord.id, fields, editingRecord._revision);
       editingRecord = result.font;
       fonts.set(editingRecord.id, editingRecord);
     }
@@ -860,7 +954,7 @@
   async function saveManually() {
     await flushSave();
     if (unconfirmedFont()) {
-      editingRecord = await desktop.confirmFont(editingRecord.id);
+      editingRecord = await projects.confirmFont(editingRecord.id, editingRecord._revision);
       fonts.set(editingRecord.id, editingRecord);
       updateSaveStatus();
     }
@@ -878,7 +972,7 @@
       // Let an in-flight write finish before removing the draft.
       await saving?.catch(() => {});
       clearTimeout(autoSaveTimer);
-      await desktop.deleteProject("font", editingRecord.id);
+      await projects.deleteProject("font", editingRecord.id, false, editingRecord._revision);
       fonts.delete(editingRecord.id);
       showMenu("fonts");
     } else return false;
@@ -896,7 +990,7 @@
   async function createFont() {
     const name = checkNewName(fontSetupName);
     const characterGroups = new FormData(fontSetupForm).getAll("character-group");
-    const font = await desktop.createFont(editingRecord.id, { name, characterGroups });
+    const font = await projects.createFont(editingRecord.id, { name, characterGroups }, editingRecord._revision);
     fonts.set(font.id, font);
     openFont(font);
   }
@@ -913,7 +1007,7 @@
       simplify: { original: templates.has(template.id), linked: linkedFonts(template.id).length - 1 }
     }, async (name, destination) => {
       await flushSave();
-      return desktop.simplifyFont(editingRecord.id, { ...simplification, name, destination });
+      return projects.simplifyFont(editingRecord.id, { ...simplification, name, destination }, editingRecord._revision);
     });
     if (!saved) return;
     templates.set(saved.template.id, saved.template);
@@ -1096,12 +1190,12 @@
       const { id, template } = resolvingFont;
       const result = await promptProject({
         title: "保留旧模板", caption: "独立模板名称", name: suggestedName(template.name, "（保留）"), action: "保留模板"
-      }, name => desktop.keepTemplate(id, name));
+      }, name => projects.keepTemplate(id, name, resolvingFont._revision));
       if (!result) return;
       templates.set(result.template.id, result.template);
       font = result.font;
     } else {
-      font = await desktop.adaptFont(resolvingFont.id, preview.template, preview.glyphs);
+      font = await projects.adaptFont(resolvingFont.id, preview.template, preview.glyphs, resolvingFont._revision);
     }
     fonts.set(font.id, font);
     if (editWhenResolved) {
@@ -1156,7 +1250,7 @@
     function tick(time) {
       frame = null;
       const remaining = viewport.scrollWidth - viewport.clientWidth;
-      if (!viewport.clientWidth || remaining <= 0 || hovered) {
+      if (!viewport.clientWidth || remaining <= 0 || hovered || (!desktop && reducedMotion.matches)) {
         lastTime = undefined;
         return;
       }
@@ -1174,7 +1268,7 @@
     }
 
     function resume() {
-      if (frame === null && !hovered) frame = requestAnimationFrame(tick);
+      if (frame === null && !hovered && (desktop || !reducedMotion.matches)) frame = requestAnimationFrame(tick);
     }
 
     viewport.addEventListener("pointerenter", () => {
@@ -1183,10 +1277,20 @@
       frame = null;
       lastTime = undefined;
     });
-    viewport.addEventListener("pointerleave", () => {
+    viewport.addEventListener("pointerleave", event => {
+      if (!desktop && event.pointerType === "touch") return;
       hovered = false;
       resume();
     });
+    if (!desktop) {
+      viewport.tabIndex = 0;
+      viewport.addEventListener("focus", () => { hovered = true; });
+      viewport.addEventListener("blur", () => {
+        hovered = viewport.matches(":hover");
+        resume();
+      });
+      reducedMotion.addEventListener("change", resume);
+    }
     new ResizeObserver(resume).observe(viewport);
     refreshSample = () => {
       position = 0;
@@ -1194,7 +1298,7 @@
       lastTime = undefined;
       holdUntil = performance.now() + 650;
       viewport.scrollLeft = 0;
-      hovered = viewport.matches(":hover");
+      hovered = viewport.matches(":hover") || (!desktop && document.activeElement === viewport);
       resume();
     };
   }
@@ -1260,9 +1364,109 @@
     }).catch(report);
   }
 
+  function initializeDesktop() {
+    $("native-window-controls").hidden = false;
+    initializeUpdates();
+    window.addEventListener("keydown", event => {
+      if (event.key === "Tab") event.preventDefault();
+    }, { capture: true });
+    for (const action of ["minimize", "maximize", "close"]) {
+      $("desktop-" + action).addEventListener("click", () => desktop.controlWindow(action));
+    }
+    desktop.onMaximized(maximized => {
+      const button = $("desktop-maximize");
+      const label = maximized ? "还原" : "最大化";
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      $("desktop-maximize-icon").setAttribute("d", maximized ?
+        "M3.5 5.5h7v7h-7z M5.5 5.5v-2h7v7h-2" : "M3.5 3.5h9v9h-9z");
+    });
+    desktop.onSaveBeforeClose(async () => {
+      if (closing) return;
+      closing = true;
+      await activeAction?.catch(() => {});
+      try {
+        const saved = await run(prepareToLeave);
+        if (saved || (saved === undefined && !unconfirmedFont() &&
+            window.confirm("自动保存失败。要放弃未保存的修改并退出吗？"))) {
+          allowUnload = true;
+          await desktop.controlWindow("close");
+        }
+      } finally {
+        allowUnload = false;
+        closing = false;
+      }
+    });
+    window.addEventListener("beforeunload", event => {
+      if (allowUnload) return;
+      document.activeElement?.blur();
+      if (busy || saving || dirty() || unconfirmedFont()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
+  }
+
+  function initializeWeb() {
+    document.body.classList.add("web-app");
+    const workbench = document.querySelector(".workbench");
+    const panels = workbench.querySelector(".web-panel-switch");
+    panels.addEventListener("click", event => {
+      const choice = event.target.closest("[data-panel]");
+      if (!choice) return;
+      workbench.dataset.mobilePanel = choice.dataset.panel;
+      for (const button of panels.querySelectorAll("button")) {
+        button.setAttribute("aria-pressed", button === choice);
+      }
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "hidden" || busy || !editing()) return;
+      const input = document.activeElement;
+      if (input?.id === "font-name" || input?.id === "spacing") input.blur();
+      if (dirty()) save().catch(error => studio.notify(error.message));
+    });
+    initializeWebUpdates();
+  }
+
+  function initializeWebUpdates() {
+    if (!("serviceWorker" in navigator)) return;
+    const button = $("web-update");
+    const serviceWorker = navigator.serviceWorker;
+    serviceWorker.register("./service-worker.js").then(registration => {
+      const showUpdate = () => { button.hidden = !registration.waiting || !serviceWorker.controller; };
+      const watchInstall = () => registration.installing?.addEventListener("statechange", showUpdate);
+      registration.addEventListener("updatefound", watchInstall);
+      serviceWorker.addEventListener("controllerchange", showUpdate);
+      watchInstall();
+      showUpdate();
+      button.addEventListener("click", () => run(async () => {
+        await flushSave();
+        const waiting = registration.waiting;
+        if (waiting) {
+          await new Promise((resolve, reject) => {
+            const changed = () => {
+              clearTimeout(timeout);
+              resolve();
+            };
+            const timeout = setTimeout(() => {
+              serviceWorker.removeEventListener("controllerchange", changed);
+              reject(new Error("新版尚未就绪，请重试。"));
+            }, 8000);
+            serviceWorker.addEventListener("controllerchange", changed, { once: true });
+            waiting.postMessage("activate");
+          });
+        }
+        location.reload();
+      }));
+    }).catch(() => {
+      // The editor also works with the network when the offline cache is unavailable.
+    });
+  }
+
   function start(api) {
     studio = api;
-    initializeUpdates();
+    if (desktop) initializeDesktop();
+    else initializeWeb();
     initializeExports();
     initializeGlyphControls();
     initializeCardSorting();
@@ -1282,9 +1486,6 @@
       container.classList.add("desktop-sliding-choice");
       choiceSizes.observe(container);
     }
-    window.addEventListener("keydown", event => {
-      if (event.key === "Tab") event.preventDefault();
-    }, { capture: true });
     $("use-template").textContent = "使用此模板创建字体";
     $("simplify-template").textContent = "自动简化模板";
     $("clear-template").classList.replace("clear", "accent");
@@ -1321,7 +1522,13 @@
     $("desktop-save").addEventListener("click", () => run(saveManually));
     $("desktop-editor-back").addEventListener("click", () => run(async () => {
       const next = page === "template" ? "templates" : "fonts";
-      if (!await prepareToLeave()) return;
+      try {
+        if (!await prepareToLeave()) return;
+      } catch (error) {
+        if (desktop || error.code !== "project-conflict") throw error;
+        if (!window.confirm(`${error.message}
+放弃本页尚未保存的修改并返回菜单？可先取消，再导出本页项目。`)) return;
+      }
       await reload();
       showMenu(next);
     }));
@@ -1334,41 +1541,6 @@
     $("desktop-preview-adaptation").addEventListener("click", () => run(previewAdaptation));
     $("desktop-apply-adaptation").addEventListener("click", () => run(() => finishResolution(false)));
     $("desktop-keep-template").addEventListener("click", () => run(() => finishResolution(true)));
-    for (const action of ["minimize", "maximize", "close"]) {
-      $("desktop-" + action).addEventListener("click", () => desktop.controlWindow(action));
-    }
-    desktop.onMaximized(maximized => {
-      const button = $("desktop-maximize");
-      const label = maximized ? "还原" : "最大化";
-      button.title = label;
-      button.setAttribute("aria-label", label);
-      $("desktop-maximize-icon").setAttribute("d", maximized ?
-        "M3.5 5.5h7v7h-7z M5.5 5.5v-2h7v7h-2" : "M3.5 3.5h9v9h-9z");
-    });
-    desktop.onSaveBeforeClose(async () => {
-      if (closing) return;
-      closing = true;
-      await activeAction?.catch(() => {});
-      try {
-        const saved = await run(prepareToLeave);
-        if (saved || (saved === undefined && !unconfirmedFont() &&
-            window.confirm("自动保存失败。要放弃未保存的修改并退出吗？"))) {
-          allowUnload = true;
-          await desktop.controlWindow("close");
-        }
-      } finally {
-        allowUnload = false;
-        closing = false;
-      }
-    });
-    window.addEventListener("beforeunload", event => {
-      if (allowUnload) return;
-      document.activeElement?.blur();
-      if (busy || saving || dirty() || unconfirmedFont()) {
-        event.preventDefault();
-        event.returnValue = "";
-      }
-    });
     document.addEventListener("keydown", event => {
       if (!editing() || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
       event.preventDefault();
@@ -1376,7 +1548,16 @@
     });
     return run(async () => {
       try {
+        let migrationWarning;
+        if (!desktop) {
+          try {
+            await projects.migrateLegacy(studio.readLegacyProject);
+          } catch (error) {
+            migrationWarning = error.message;
+          }
+        }
         await reload();
+        if (migrationWarning) studio.notify(migrationWarning);
       } finally {
         showMenu("templates");
       }
